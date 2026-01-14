@@ -1,0 +1,36 @@
+{
+  "name": "@modelcontextprotocol/server-art-bridge",
+  "version": "0.1.0",
+  "description": "MCP server for Korean performing arts information (KOPIS API)",
+  "license": "MIT",
+  "mcpName": "io.github.modelcontextprotocol/server-art-bridge",
+  "author": "Art-Bridge Team",
+  "homepage": "https://modelcontextprotocol.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/modelcontextprotocol/servers.git"
+  },
+  "type": "module",
+  "bin": {
+    "mcp-server-art-bridge": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && shx chmod +x dist/*.js",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "xml2js": "^0.6.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/xml2js": "^0.4.14",
+    "shx": "^0.3.4",
+    "typescript": "^5.8.2"
+  }
+}
