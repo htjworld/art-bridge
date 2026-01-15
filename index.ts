@@ -255,10 +255,10 @@ server.registerTool(
 server.registerTool(
   "get_trending_performances",
   {
-    title: "인기 및 마감임박 공연 추천",
+    title: "인기 공연 및 마감임박 공연 추천",
     description:
-      "현재 인기있는 공연과 마감이 임박한 공연을 추천합니다. " +
-      "종료일이 7일 이내인 공연에 가산점을 주어 상단에 노출합니다. " +
+      "KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다. " +
+      "인기도(0-100)를 기준으로 정렬하며, 종료일이 14일 이내인 공연에는 가산점(+10)을 부여합니다. " +
       "기본적으로 5개의 결과를 반환하며, limit 파라미터로 조정 가능합니다.",
     inputSchema: {
       genreCode: z.string().optional().describe('장르 코드 (전체 조회 시 생략 가능)'),
@@ -282,14 +282,20 @@ server.registerTool(
         };
       }
 
-      const formatted = events.map((event, index) => 
-        `${index + 1}. ${event.prfnm}${event.isClosingSoon ? ' 🔥 마감임박!' : ''}\n` +
-        `   공연장: ${event.fcltynm}\n` +
-        `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
-        `   장르: ${event.genrenm}\n` +
-        `   지역: ${event.area}\n` +
-        `   ID: ${event.mt20id}`
-      ).join('\n\n');
+      const formatted = events.map((event, index) => {
+        const popularityBadge = event.popularity >= 80 ? '🔥' : event.popularity >= 60 ? '⭐' : '';
+        const closingBadge = event.isClosingSoon ? ' ⏰ 마감임박!' : '';
+        
+        return (
+          `${index + 1}. ${event.prfnm}${popularityBadge}${closingBadge}\n` +
+          `   인기도: ${event.popularity}/100\n` +
+          `   공연장: ${event.fcltynm}\n` +
+          `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
+          `   장르: ${event.genrenm}\n` +
+          `   지역: ${event.area}\n` +
+          `   ID: ${event.mt20id}`
+        );
+      }).join('\n\n');
 
       return {
         content: [{ type: "text" as const, text: formatted }],
@@ -510,7 +516,7 @@ app.post("/sse", async (req: Request, res: Response) => {
             },
             {
               name: "get_trending_performances",
-              description: "현재 인기있는 공연과 마감이 임박한 공연을 추천합니다. 종료일이 7일 이내인 공연에 가산점을 주어 상단에 노출합니다. 기본적으로 5개의 결과를 반환하며, limit 파라미터로 조정 가능합니다.",
+              description: "KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다. 인기도(0-100)를 기준으로 정렬하며, 종료일이 14일 이내인 공연에는 가산점(+10)을 부여합니다. 기본적으로 5개의 결과를 반환하며, limit 파라미터로 조정 가능합니다.",
               inputSchema: {
                 type: "object",
                 properties: {
@@ -543,6 +549,7 @@ app.post("/sse", async (req: Request, res: Response) => {
   if (!transport) {
     transport = Array.from(transports.values())[0];
   }
+
   if (!transport) {
     return res.status(503).json({ 
       error: "Service temporarily unavailable",

@@ -75,6 +75,8 @@ export interface FreeEvent extends PerformanceListItem {
 export interface TrendingEvent extends PerformanceListItem {
   isClosingSoon: boolean;
   daysUntilClose: number;
+  popularity: number;
+  finalScore: number;
 }
 
 export interface SearchParams {
@@ -116,6 +118,14 @@ function getDaysUntilClose(endDateStr: string): number {
   const diffTime = endDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;
+}
+
+function getTodayYYYYMMDD(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
 }
 
 // API Functions
@@ -290,38 +300,91 @@ export async function filterFreeEvents(params: FreeEventParams): Promise<FreeEve
   return freeEvents;
 }
 
+async function getBoxOfficeRankings(genreCode?: string): Promise<Map<string, number>> {
+  const today = getTodayYYYYMMDD();
+  
+  const apiParams: Record<string, string> = {
+    ststype: 'week',
+    date: today,
+    catecode: genreCode || ''
+  };
+
+  try {
+    const xml = await fetchKopisApi('/boxoffice', apiParams);
+    const result = await parseXmlResponse<any>(xml);
+
+    const rankMap = new Map<string, number>();
+
+    if (!result.boxofs || !result.boxofs.boxof) {
+      return rankMap;
+    }
+
+    const items = Array.isArray(result.boxofs.boxof) ? result.boxofs.boxof : [result.boxofs.boxof];
+    
+    // 순위를 인기도로 변환 (1위=100, 10위=10, 선형 변환)
+    items.forEach((item: any, index: number) => {
+      const mt20id = item.mt20id || '';
+      const rank = parseInt(item.rnum || String(index + 1));
+      
+      // 1위 = 100점, 순위가 낮아질수록 점수 감소
+      // 최소 10위까지만 유효한 점수 부여
+      let popularity = 0;
+      if (rank <= 10) {
+        popularity = 100 - ((rank - 1) * 10);
+      } else if (rank <= 20) {
+        popularity = 10 - ((rank - 10) * 0.5);
+      }
+      
+      rankMap.set(mt20id, Math.max(0, popularity));
+    });
+
+    return rankMap;
+  } catch (error) {
+    console.error('박스오피스 API 호출 실패:', error);
+    return new Map<string, number>();
+  }
+}
+
 export async function getTrendingPerformances(params: TrendingParams): Promise<TrendingEvent[]> {
   const today = new Date();
   const startDate = today.toISOString().split('T')[0].replace(/-/g, '');
   const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
     .toISOString().split('T')[0].replace(/-/g, '');
 
+  // 박스오피스 순위 가져오기
+  const boxOfficeRankings = await getBoxOfficeRankings(params.genreCode);
+
   // Get current performances
   const events = await searchEventsByLocation({
     genreCode: params.genreCode || '',
     startDate,
     endDate,
-    limit: 20 // Fetch more to ensure we have enough after filtering
+    limit: 50 // Fetch more to get diverse results
   });
 
-  // Calculate days until close and add priority
+  // Calculate popularity and final score
   const trendingEvents: TrendingEvent[] = events.map(event => {
     const daysUntilClose = getDaysUntilClose(event.prfpdto);
-    const isClosingSoon = daysUntilClose <= 7 && daysUntilClose >= 0;
+    const isClosingSoon = daysUntilClose <= 14 && daysUntilClose >= 0;
+    
+    // 인기도: 박스오피스에 있으면 해당 점수, 없으면 0
+    const popularity = boxOfficeRankings.get(event.mt20id) || 0;
+    
+    // 최종 점수 = 인기도(0-100) + 마감임박 가산점(+10)
+    const closingBonus = isClosingSoon ? 10 : 0;
+    const finalScore = popularity + closingBonus;
     
     return {
       ...event,
       isClosingSoon,
-      daysUntilClose
+      daysUntilClose,
+      popularity,
+      finalScore
     };
   });
 
-  // Sort by closing soon first, then by days until close
-  trendingEvents.sort((a, b) => {
-    if (a.isClosingSoon && !b.isClosingSoon) return -1;
-    if (!a.isClosingSoon && b.isClosingSoon) return 1;
-    return a.daysUntilClose - b.daysUntilClose;
-  });
+  // Sort by final score (인기도 + 마감임박 가산점)
+  trendingEvents.sort((a, b) => b.finalScore - a.finalScore);
 
   const limit = params.limit || 5;
   return trendingEvents.slice(0, limit);
