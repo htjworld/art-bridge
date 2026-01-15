@@ -365,6 +365,20 @@ app.get("/sse", async (req: Request, res: Response) => {
   });
 });
 
+// 카카오가 POST /sse로 요청하는 경우 처리
+app.post("/sse", async (req: Request, res: Response) => {
+  console.error("POST request to /sse");
+  
+  if (transport) {
+    await transport.handlePostMessage(req, res);
+  } else {
+    res.status(400).json({ 
+      error: "No active SSE transport session",
+      message: "Please establish SSE connection first by GET /sse"
+    });
+  }
+});
+
 app.post("/messages", async (req: Request, res: Response) => {
   console.error("POST request to /messages");
   
