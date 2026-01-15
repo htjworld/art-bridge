@@ -55,7 +55,7 @@ const GetTrendingPerformancesArgsSchema = z.object({
   limit: z.number().optional().default(5).describe('결과 개수 (기본: 5)')
 });
 
-// Server setup
+// Server setup - 간단히 하나의 서버만 사용
 const server = new McpServer(
   {
     name: "art-bridge-server",
@@ -340,24 +340,17 @@ app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-// 각 연결마다 새로운 서버와 transport 생성
-const sessions = new Map<string, { server: McpServer; transport: SSEServerTransport }>();
+let transport: SSEServerTransport | null = null;
 
 app.get("/sse", async (req: Request, res: Response) => {
-  const sessionId = Math.random().toString(36).substring(7);
-  console.error(`New SSE connection established: ${sessionId}`);
+  console.error("New SSE connection established");
   
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   
-  // 각 연결마다 새 서버 인스턴스 생성
-  const server = createMcpServer();
-  const transport = new SSEServerTransport("/messages", res);
-  
-  sessions.set(sessionId, { server, transport });
-  
+  transport = new SSEServerTransport("/messages", res);
   await server.connect(transport);
   
   const keepAlive = setInterval(() => {
@@ -368,19 +361,15 @@ app.get("/sse", async (req: Request, res: Response) => {
   
   req.on('close', () => {
     clearInterval(keepAlive);
-    sessions.delete(sessionId);
-    console.error(`SSE connection closed: ${sessionId}`);
+    console.error("SSE connection closed");
   });
 });
 
 app.post("/messages", async (req: Request, res: Response) => {
   console.error("POST request to /messages");
   
-  // 가장 최근 세션 찾기
-  const session = Array.from(sessions.values()).pop();
-  
-  if (session) {
-    await session.transport.handlePostMessage(req, res);
+  if (transport) {
+    await transport.handlePostMessage(req, res);
   } else {
     res.status(400).json({ 
       error: "No active SSE transport session",
