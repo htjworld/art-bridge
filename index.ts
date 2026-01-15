@@ -2,7 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import express from "express";
+import express, { Request, Response } from "express";
 import { z } from "zod";
 import {
   GENRE_CODES,
@@ -16,18 +16,15 @@ import {
 } from './lib.js';
 
 // Command line argument parsing
-const args = process.argv.slice(2);
-if (args.length === 0) {
-  console.error("Usage: mcp-server-art-bridge <KOPIS_API_KEY>");
-  console.error("Note: You need to provide a valid KOPIS API key to use this server.");
+const apiKey = process.env.KOPIS_API_KEY || process.argv[2];
+
+if (!apiKey) {
+  console.error("Error: KOPIS_API_KEY is required via environment variable or argument.");
   process.exit(1);
 }
 
-// Set API key
-const apiKey = args[0];
 setApiKey(apiKey);
-
-console.error("Art-Bridge MCP Server initializing with API key...");
+console.error("Art-Bridge MCP Server initializing...");
 
 // Schema definitions
 const GetGenreListArgsSchema = z.object({});
@@ -306,17 +303,21 @@ server.registerTool(
 );
 
 const app = express();
+app.use(express.json()); 
+
 let transport: SSEServerTransport | null = null;
 
-app.get("/sse", async (req, res) => {
+app.get("/sse", async (req: Request, res: Response) => {
+  console.error("New SSE connection established");
   transport = new SSEServerTransport("/messages", res);
   await server.connect(transport);
 });
 
-
-app.post("/messages", async (req, res) => {
+app.post("/messages", async (req: Request, res: Response) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
+  } else {
+    res.status(400).send("No active SSE transport session");
   }
 });
 
