@@ -548,6 +548,116 @@ app.post("/sse", async (req: Request, res: Response) => {
         }
       });
     }
+    if (req.body?.method === 'tools/call') {
+      const toolName = req.body.params?.name;
+      const toolArgs = req.body.params?.arguments || {};
+      
+      console.error(`Direct tool call: ${toolName}`);
+      
+      try {
+        let result;
+        
+        switch (toolName) {
+          case 'get_genre_list':
+            const genreList = getGenreList();
+            result = { content: [{ type: "text", text: genreList.join('\n') }] };
+            break;
+            
+          case 'search_events_by_location':
+            const searchEvents = await searchEventsByLocation(toolArgs);
+            const searchFormatted = searchEvents.length === 0
+              ? "검색 조건에 맞는 공연이 없습니다."
+              : searchEvents.map((event, index) => 
+                  `${index + 1}. ${event.prfnm}\n` +
+                  `   공연장: ${event.fcltynm}\n` +
+                  `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
+                  `   장르: ${event.genrenm}\n` +
+                  `   지역: ${event.area}\n` +
+                  `   상태: ${event.prfstate}\n` +
+                  `   ID: ${event.mt20id}`
+                ).join('\n\n');
+            result = { content: [{ type: "text", text: searchFormatted }] };
+            break;
+            
+          case 'filter_free_events':
+            const freeEvents = await filterFreeEvents(toolArgs);
+            const freeFormatted = freeEvents.length === 0
+              ? "검색 조건에 맞는 무료 공연이 없습니다."
+              : freeEvents.map((event, index) => 
+                  `${index + 1}. ${event.prfnm}\n` +
+                  `   공연장: ${event.fcltynm}\n` +
+                  `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
+                  `   장르: ${event.genrenm}\n` +
+                  `   지역: ${event.area}\n` +
+                  `   관람료: ${event.pcseguidance}\n` +
+                  `   ID: ${event.mt20id}`
+                ).join('\n\n');
+            result = { content: [{ type: "text", text: freeFormatted }] };
+            break;
+            
+          case 'get_event_detail':
+            const detail = await getEventDetail(toolArgs.eventId);
+            const detailFormatted = 
+              `=== ${detail.prfnm} ===\n\n` +
+              `공연 기간: ${detail.prfpdfrom} ~ ${detail.prfpdto}\n` +
+              `공연장: ${detail.fcltynm}\n` +
+              `장르: ${detail.genrenm}\n` +
+              `상태: ${detail.prfstate}\n\n` +
+              `출연진: ${detail.prfcast || '정보 없음'}\n` +
+              `크루: ${detail.prfcrew || '정보 없음'}\n` +
+              `공연 시간: ${detail.prfruntime || '정보 없음'}\n` +
+              `관람 연령: ${detail.prfage || '정보 없음'}\n` +
+              `관람료: ${detail.pcseguidance || '정보 없음'}\n\n` +
+              `제작사: ${detail.entrpsnm || '정보 없음'}\n` +
+              `공연 시간표: ${detail.dtguidance || '정보 없음'}\n\n` +
+              `포스터: ${detail.poster}\n` +
+              (detail.styurls.length > 0 ? `상세 이미지:\n${detail.styurls.map((url, i) => `  ${i + 1}. ${url}`).join('\n')}\n` : '') +
+              (detail.relates.length > 0 ? `\n예매 링크:\n${detail.relates.map((r, i) => `  ${i + 1}. ${r.relatenm}: ${r.relateurl}`).join('\n')}` : '');
+            result = { content: [{ type: "text", text: detailFormatted }] };
+            break;
+            
+          case 'get_trending_performances':
+            const trendingEvents = await getTrendingPerformances(toolArgs);
+            const trendingFormatted = trendingEvents.length === 0
+              ? "현재 추천할 공연이 없습니다."
+              : trendingEvents.map((event, index) => {
+                  const popularityBadge = event.popularity >= 80 ? '🔥' : event.popularity >= 60 ? '⭐' : '';
+                  const closingBadge = event.isClosingSoon ? ' ⏰ 마감임박!' : '';
+                  return (
+                    `${index + 1}. ${event.prfnm}${popularityBadge}${closingBadge}\n` +
+                    `   인기도: ${event.popularity}/100\n` +
+                    `   공연장: ${event.fcltynm}\n` +
+                    `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
+                    `   장르: ${event.genrenm}\n` +
+                    `   지역: ${event.area}\n` +
+                    `   ID: ${event.mt20id}`
+                  );
+                }).join('\n\n');
+            result = { content: [{ type: "text", text: trendingFormatted }] };
+            break;
+            
+          default:
+            throw new Error(`Unknown tool: ${toolName}`);
+        }
+        
+        return res.json({
+          jsonrpc: "2.0",
+          id: req.body.id,
+          result
+        });
+        
+      } catch (error) {
+        console.error(`Error calling tool ${toolName}:`, error);
+        return res.json({
+          jsonrpc: "2.0",
+          id: req.body.id,
+          error: {
+            code: -32603,
+            message: error instanceof Error ? error.message : String(error)
+          }
+        });
+      }
+    }
     
     return res.status(200).json({ 
       status: "ok",
