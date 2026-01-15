@@ -303,25 +303,72 @@ server.registerTool(
 );
 
 const app = express();
-app.use(express.json()); 
+app.use(express.json());
+
+// 🔥 헬스체크 엔드포인트 추가 (Railway용)
+app.get("/", (req: Request, res: Response) => {
+  res.json({
+    name: "ArtBridge MCP Server",
+    version: "0.1.0",
+    status: "running",
+    endpoints: {
+      sse: "/sse",
+      messages: "/messages"
+    },
+    tools: [
+      "get_genre_list",
+      "search_events_by_location",
+      "filter_free_events",
+      "get_event_detail",
+      "get_trending_performances"
+    ]
+  });
+});
+
+// 헬스체크 엔드포인트 (Railway가 사용)
+app.get("/health", (req: Request, res: Response) => {
+  res.json({ status: "ok" });
+});
 
 let transport: SSEServerTransport | null = null;
 
 app.get("/sse", async (req: Request, res: Response) => {
   console.error("New SSE connection established");
+  
+  // SSE 헤더 설정 강화
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Nginx 버퍼링 비활성화
+  
   transport = new SSEServerTransport("/messages", res);
   await server.connect(transport);
+  
+  // 연결 유지를 위한 핑
+  const keepAlive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30000);
+  
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    console.error("SSE connection closed");
+  });
 });
 
 app.post("/messages", async (req: Request, res: Response) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
-    res.status(400).send("No active SSE transport session");
+    res.status(400).json({ 
+      error: "No active SSE transport session",
+      message: "Please establish SSE connection first by GET /sse"
+    });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.error(`MCP Server running on port ${PORT}`);
+  console.error(`ArtBridge MCP Server running on port ${PORT}`);
+  console.error(`Health check: http://localhost:${PORT}/health`);
+  console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
 });
