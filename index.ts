@@ -305,7 +305,7 @@ server.registerTool(
 const app = express();
 app.use(express.json());
 
-// 🔥 헬스체크 엔드포인트 추가 (Railway용)
+// 헬스체크 엔드포인트
 app.get("/", (req: Request, res: Response) => {
   res.json({
     name: "ArtBridge MCP Server",
@@ -325,26 +325,24 @@ app.get("/", (req: Request, res: Response) => {
   });
 });
 
-// 헬스체크 엔드포인트 (Railway가 사용)
 app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
 let transport: SSEServerTransport | null = null;
 
+// SSE 엔드포인트 - GET과 POST 모두 처리
 app.get("/sse", async (req: Request, res: Response) => {
-  console.error("New SSE connection established");
+  console.error("New SSE connection established (GET)");
   
-  // SSE 헤더 설정 강화
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // Nginx 버퍼링 비활성화
+  res.setHeader('X-Accel-Buffering', 'no');
   
   transport = new SSEServerTransport("/messages", res);
   await server.connect(transport);
   
-  // 연결 유지를 위한 핑
   const keepAlive = setInterval(() => {
     res.write(': keepalive\n\n');
   }, 30000);
@@ -355,7 +353,31 @@ app.get("/sse", async (req: Request, res: Response) => {
   });
 });
 
+// 카카오 MCP가 POST /sse로 요청하는 경우 대응
+app.post("/sse", async (req: Request, res: Response) => {
+  console.error("POST request to /sse - redirecting to /messages handler");
+  
+  // SSE 연결이 없으면 먼저 연결 생성
+  if (!transport) {
+    console.error("No transport found, creating new SSE transport");
+    
+    // 임시 응답 객체로 SSE transport 생성
+    const sseRes = res;
+    sseRes.setHeader('Content-Type', 'text/event-stream');
+    sseRes.setHeader('Cache-Control', 'no-cache');
+    sseRes.setHeader('Connection', 'keep-alive');
+    
+    transport = new SSEServerTransport("/messages", sseRes);
+    await server.connect(transport);
+  }
+  
+  // POST 요청 처리
+  await transport.handlePostMessage(req, res);
+});
+
 app.post("/messages", async (req: Request, res: Response) => {
+  console.error("POST request to /messages");
+  
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
