@@ -1,4 +1,4 @@
-FROM node:22.12-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ FROM node:22-alpine AS release
 
 WORKDIR /app
 
-COPY --from=builder /app/dist/ ./
+COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/package-lock.json ./
 
@@ -21,4 +21,4 @@ ENV NODE_ENV=production
 
 RUN npm ci --omit=dev
 
-ENTRYPOINT ["node", "index.js"]
+ENTRYPOINT ["node", "dist/index.js"]
