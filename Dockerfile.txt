@@ -9,10 +9,16 @@ COPY lib.ts ./
 RUN npm install
 RUN npm run build
 
+# 디버깅: 빌드 후 파일 확인
+RUN echo "=== ROOT FILES ===" && ls -la
+RUN echo "=== DIST FILES ===" && ls -la dist/ || echo "NO DIST FOLDER"
+RUN echo "=== INDEX.JS CONTENT ===" && head -10 dist/index.js || echo "NO INDEX.JS"
+RUN echo "=== LIB.JS CONTENT ===" && head -10 dist/lib.js || echo "NO LIB.JS"
+
 FROM node:22-alpine AS release
 WORKDIR /app
 
-# dist 폴더 전체를 /app으로 복사
+# dist의 내용을 /app으로 복사
 COPY --from=builder /app/dist/ ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/package-lock.json ./
@@ -20,8 +26,9 @@ COPY --from=builder /app/package-lock.json ./
 ENV NODE_ENV=production
 RUN npm ci --omit=dev
 
-# 파일 구조 확인
-RUN ls -la
+# 최종 파일 확인
+RUN echo "=== FINAL ROOT FILES ===" && ls -la
+RUN echo "=== INDEX.JS TYPE ===" && file index.js || echo "NO INDEX.JS"
+RUN echo "=== FIRST LINE ===" && head -1 index.js || echo "CANNOT READ"
 
-# /app/index.js 실행 (dist/ 없이)
 CMD ["node", "index.js"]
