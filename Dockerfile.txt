@@ -21,4 +21,4 @@ ENV NODE_ENV=production
 
 RUN npm ci --omit=dev
 
-ENTRYPOINT ["node", "dist/index.js"]
+ENTRYPOINT ["node", "--experimental-specifier-resolution=node", "dist/index.js"]
