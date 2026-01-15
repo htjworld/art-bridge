@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "./",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -15,7 +15,7 @@
     "sourceMap": true
   },
   "include": [
-    "./**/*.ts"
+    "*.ts"
   ],
   "exclude": [
     "node_modules",
