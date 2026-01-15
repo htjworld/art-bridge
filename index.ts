@@ -13,6 +13,7 @@ import {
   getEventDetail,
   getTrendingPerformances,
   setApiKey,
+  getDaysUntilClose,
 } from './lib.js';
 
 // Command line argument parsing
@@ -42,7 +43,7 @@ const FilterFreeEventsArgsSchema = z.object({
   startDate: z.string().describe('공연 시작일 (YYYYMMDD)'),
   endDate: z.string().describe('공연 종료일 (YYYYMMDD)'),
   sidoCode: z.string().optional().describe('시도 코드 (예: 11-서울, 41-경기)'),
-  limit: z.number().optional().default(15).describe('결과 개수 (권장: 데이터셋 많을 때 15-30개, 기본: 15)')
+  limit: z.number().optional().default(10).describe('결과 개수 (권장: 데이터셋 많을 때 10개, 기본: 5)')
 });
 
 const GetEventDetailArgsSchema = z.object({
@@ -163,8 +164,7 @@ server.registerTool(
       "- 사용자가 날짜를 지정하지 않으면: 오늘부터 30일 이내 공연 중 오늘/내일에 공연이 있는 것을 우선 추천\n" +
       "- 사용자가 '오늘', '내일', '이번주', '다음주' 등을 지정하면: 해당 기간에 맞춰 startDate/endDate 계산\n\n" +
       "**중요 - 결과 처리:**\n" +
-      "- 이 도구는 항상 15-30개의 결과를 반환합니다 (limit 파라미터 사용)\n" +
-      "- 다음 도구 호출이 필요한 경우: 15-30개를 모두 활용\n" +
+      "- 이 도구는 항상 5-10개의 결과를 반환합니다 (limit 파라미터 사용)\n" +
       "- 최종 답변 시: 그 중 베스트 3-5개만 선택하여 사용자에게 추천\n" +
       "- 결과가 3-5개 미만이면: 있는 만큼만 추천\n" +
       "- 결과가 없으면: 유료 공연 중 저렴한 것을 대안으로 제시",
@@ -509,7 +509,13 @@ app.post("/sse", async (req: Request, res: Response) => {
             },
             {
               name: "filter_free_events",
-              description: "무료 공연만 필터링하여 검색합니다. 공연 목록을 가져온 후 각 공연의 상세 정보를 확인하여 무료 공연만 반환합니다. **중요: 날짜 미지정시 오늘부터 30일 이내 공연으로, 오늘/내일 공연 우선. limit은 15-30으로 설정하여 충분한 선택지를 확보하세요.** 최종 답변 시 3-5개를 추천하고, 적으면 있는 만큼 추천하세요. 검색 결과가 없으면 유료 공연 중 저렴한 것을 대안으로 제시하세요.",
+              description: "무료 공연 우선 검색 (30일 고정).\n\n" +
+                            "**검색 전략:**\n" +
+                            "- 전국 무료 공연 10개 우선 수집\n" +
+                            "- 무료 5개 미만 → 저렴한 유료로 10개 채움\n" +
+                            "- sidoCode로 지역 필터링 가능\n" +
+                            "- startDate/endDate는 무시됨 (항상 오늘~30일)\n\n" +
+                            "**최종 답변:** 3-5개만 추천",
               inputSchema: {
                 type: "object",
                 properties: {
@@ -649,8 +655,8 @@ app.post("/sse", async (req: Request, res: Response) => {
             const trendingFormatted = trendingEvents.length === 0
               ? "현재 추천할 공연이 없습니다."
               : trendingEvents.map((event, index) => {
-                  const popularityBadge = event.popularity >= 80 ? '🔥' : event.popularity >= 60 ? '⭐' : '';
-                  const closingBadge = event.isClosingSoon ? ' ⏰ 마감임박!' : '';
+                  const popularityBadge = event.popularity >= 80 ? '⭐' : '';
+                  const closingBadge = event.daysUntilClose <= 7 && event.daysUntilClose >= 0 ? ' 🔥 마감임박!' : '';
                   return (
                     `${index + 1}. ${event.prfnm}${popularityBadge}${closingBadge}\n` +
                     `   인기도: ${event.popularity}/100\n` +

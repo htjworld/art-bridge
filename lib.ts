@@ -70,6 +70,7 @@ export interface PerformanceDetail {
 
 export interface FreeEvent extends PerformanceListItem {
   pcseguidance: string;
+  price: number;
 }
 
 export interface TrendingEvent extends PerformanceListItem {
@@ -109,6 +110,9 @@ export function getGenreList(): string[] {
 function parseDate(dateStr: string): Date {
   // Format: YYYY.MM.DD
   const parts = dateStr.split('.');
+  if (parts.length !== 3) {
+    throw new Error(`Invalid date format: ${dateStr}`);
+  }
   return new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
 }
 
@@ -126,6 +130,32 @@ function getTodayYYYYMMDD(): string {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   return `${year}${month}${day}`;
+}
+
+function getDateAfterDays(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
+}
+
+// 가격 문자열에서 최저가 추출
+function extractMinPrice(priceStr: string): number {
+  if (!priceStr) return 999999;
+  
+  // 무료 체크
+  if (priceStr.includes('무료') || priceStr.includes('0원') || priceStr.toLowerCase().includes('free')) {
+    return 0;
+  }
+  
+  // 숫자만 추출
+  const numbers = priceStr.match(/\d+/g);
+  if (!numbers || numbers.length === 0) return 999999;
+  
+  // 가장 작은 숫자 반환 (최저가)
+  return Math.min(...numbers.map(n => parseInt(n)));
 }
 
 // API Functions
@@ -257,47 +287,89 @@ export async function getEventDetail(eventId: string): Promise<PerformanceDetail
 }
 
 export async function filterFreeEvents(params: FreeEventParams): Promise<FreeEvent[]> {
+  // 30일 이내로 고정
+  const today = getTodayYYYYMMDD();
+  const endDate = getDateAfterDays(30);
+
   // First, get the event list
   const events = await searchEventsByLocation({
     genreCode: params.genreCode,
-    startDate: params.startDate,
-    endDate: params.endDate,
+    startDate: today,        // 고정값 사용
+    endDate: endDate,        // 고정값 사용
     sidoCode: params.sidoCode,
-    limit: 50 // Fetch more to ensure we get enough free events
+    limit: 100
   });
 
-  const freeEvents: FreeEvent[] = [];
-  const limit = params.limit || 5;
+  const allEventsWithPrice: FreeEvent[] = [];
 
-  // Check each event's detail to see if it's free
+  // 모든 이벤트의 가격 정보 수집
   for (const event of events) {
-    if (freeEvents.length >= limit) {
-      break;
-    }
-
     try {
       const detail = await getEventDetail(event.mt20id);
+      const price = extractMinPrice(detail.pcseguidance);
       
-      // Check if the event is free
-      const isFree = detail.pcseguidance && 
-        (detail.pcseguidance.includes('무료') || 
-         detail.pcseguidance.includes('0원') ||
-         detail.pcseguidance.toLowerCase().includes('free'));
-
-      if (isFree) {
-        freeEvents.push({
-          ...event,
-          pcseguidance: detail.pcseguidance
-        });
+      allEventsWithPrice.push({
+        ...event,
+        pcseguidance: detail.pcseguidance,
+        price
+      });
+      
+      // 무료 공연 10개 또는 전체 50개 수집하면 조기 종료
+      const freeCount = allEventsWithPrice.filter(e => e.price === 0).length;
+      if (freeCount >= 10 || allEventsWithPrice.length >= 50) {
+        break;
       }
     } catch (error) {
-      // Skip events that fail to fetch details
       console.error(`Failed to fetch detail for ${event.mt20id}:`, error);
       continue;
     }
   }
 
-  return freeEvents;
+  // 지역 필터링 (sidoCode가 있는 경우)
+  let filteredEvents = allEventsWithPrice;
+  if (params.sidoCode) {
+    filteredEvents = allEventsWithPrice.filter(event => {
+      // area 필드에서 지역명 추출 (예: "서울특별시", "경기도" 등)
+      const sidoMap: Record<string, string[]> = {
+        '11': ['서울'],
+        '26': ['부산'],
+        '27': ['대구'],
+        '28': ['인천'],
+        '29': ['광주'],
+        '30': ['대전'],
+        '31': ['울산'],
+        '36': ['세종'],
+        '41': ['경기'],
+        '42': ['강원'],
+        '43': ['충청북도', '충북'],
+        '44': ['충청남도', '충남'],
+        '45': ['전라북도', '전북'],
+        '46': ['전라남도', '전남'],
+        '47': ['경상북도', '경북'],
+        '48': ['경상남도', '경남'],
+        '50': ['제주']
+      };
+      
+      const areaKeywords = sidoMap[params.sidoCode!] || [];
+      return areaKeywords.some(keyword => event.area.includes(keyword));
+    });
+  }
+
+  // 가격순 정렬 (무료 우선, 그 다음 저렴한 순)
+  filteredEvents.sort((a, b) => a.price - b.price);
+
+  // 무료 공연만 추출
+  const freeEvents = filteredEvents.filter(e => e.price === 0);
+  
+  // 무료 공연이 5개 미만이면 저렴한 유료 포함
+  if (freeEvents.length < 5) {
+    const cheapEvents = filteredEvents.filter(e => e.price > 0).slice(0, 10 - freeEvents.length);
+    const result = [...freeEvents, ...cheapEvents].slice(0, 10);
+    return result;
+  }
+
+  // 무료 공연이 5개 이상이면 무료만 10개
+  return freeEvents.slice(0, 10);
 }
 
 async function getBoxOfficeRankings(genreCode?: string): Promise<Map<string, number>> {
