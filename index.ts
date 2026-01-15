@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
 import { z } from "zod";
 import {
   GENRE_CODES,
@@ -304,14 +305,22 @@ server.registerTool(
   }
 );
 
-// Start server
-async function runServer() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Art-Bridge MCP Server running on stdio");
-}
+const app = express();
+let transport: SSEServerTransport | null = null;
 
-runServer().catch((error) => {
-  console.error("Fatal error running server:", error);
-  process.exit(1);
+app.get("/sse", async (req, res) => {
+  transport = new SSEServerTransport("/messages", res);
+  await server.connect(transport);
+});
+
+
+app.post("/messages", async (req, res) => {
+  if (transport) {
+    await transport.handlePostMessage(req, res);
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.error(`MCP Server running on port ${PORT}`);
 });
