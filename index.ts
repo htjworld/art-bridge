@@ -16,15 +16,14 @@ import {
 } from './lib.js';
 
 // Command line argument parsing
-const apiKey = process.env.KOPIS_API_KEY || process.argv[2];
+const defaultApiKey = process.env.KOPIS_API_KEY || process.argv[2] || '';
 
-if (!apiKey) {
-  console.error("Error: KOPIS_API_KEY is required via environment variable or argument.");
-  process.exit(1);
+if (defaultApiKey) {
+  setApiKey(defaultApiKey);
+  console.error("Art-Bridge MCP Server initializing with default API key...");
+} else {
+  console.error("Art-Bridge MCP Server initializing (API key will be provided via request headers)...");
 }
-
-setApiKey(apiKey);
-console.error("Art-Bridge MCP Server initializing...");
 
 // Schema definitions
 const GetGenreListArgsSchema = z.object({});
@@ -395,7 +394,20 @@ app.get("/sse", async (req: Request, res: Response) => {
 app.post("/sse", async (req: Request, res: Response) => {
   console.error("POST request to /sse");
   console.error("Request body:", JSON.stringify(req.body, null, 2));
-  console.error("Headers:", req.headers);
+  // 민감 정보 마스킹하여 로깅
+  const safeHeaders = {
+    ...req.headers,
+    kopis_api_key: req.headers['kopis_api_key'] ? '***masked***' : undefined
+  };
+  console.error("Headers:", safeHeaders);
+  
+  // 카카오 PlayMCP가 헤더로 전달하는 API 키 읽기
+  const requestApiKey = req.headers['kopis_api_key'] as string;
+  if (requestApiKey) {
+    console.error("Using API key from request header");
+    setApiKey(requestApiKey);
+  }
+
   
   // 초기 검증 요청
   if (transports.size === 0) {
