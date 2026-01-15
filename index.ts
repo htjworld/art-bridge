@@ -502,7 +502,7 @@ app.post("/sse", async (req: Request, res: Response) => {
             },
             {
               name: "get_event_detail",
-              description: "공연 ID를 사용하여 상세 정보를 조회합니다. 시놉시스, 출연진, 관람료, 공연 시간, 연령 제한 등의 자세한 정보를 제공합니다.",
+              description: "공연 ID를 사용하여 상세 정보를 조회합니다. 시놉시스, 출연진, 관람료, 공연 시간, 연령 제한, 예매 링크 등의 자세한 정보를 제공합니다.",
               inputSchema: {
                 type: "object",
                 properties: {
