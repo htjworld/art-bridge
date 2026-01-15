@@ -387,63 +387,167 @@ app.get("/sse", async (req: Request, res: Response) => {
 });
 
 app.post("/sse", async (req: Request, res: Response) => {
-  console.error("POST request to /sse", req.headers);
+  console.error("POST request to /sse");
+  console.error("Request body:", JSON.stringify(req.body, null, 2));
+  console.error("Headers:", req.headers);
   
-  // 카카오 MCP의 초기 검증 요청에 대응
+  // 초기 검증 요청
   if (transports.size === 0) {
-    console.error("No active transport, responding with OK for discovery");
+    console.error("No active transport, handling request directly");
+    
+    // initialize 요청
+    if (req.body?.method === 'initialize') {
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        result: {
+          protocolVersion: "2024-11-05",
+          capabilities: {
+            tools: {}
+          },
+          serverInfo: {
+            name: "art-bridge-server",
+            version: "0.1.0"
+          }
+        }
+      });
+    }
+    
+    // tools/list 요청
+    if (req.body?.method === 'tools/list') {
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        result: {
+          tools: [
+            {
+              name: "get_genre_list",
+              description: "사용 가능한 모든 공연 장르 목록을 반환합니다. 사용자가 어떤 장르의 공연을 검색할 수 있는지 안내할 때 사용하세요.",
+              inputSchema: {
+                type: "object",
+                properties: {}
+              }
+            },
+            {
+              name: "search_events_by_location",
+              description: "특정 지역과 기간의 공연을 검색합니다. 시도 코드와 구군 코드를 사용하여 원하는 지역의 공연을 찾을 수 있습니다. 기본적으로 5개의 결과를 반환하며, limit 파라미터로 조정 가능합니다.",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  genreCode: {
+                    type: "string",
+                    description: "장르 코드 (예: AAAA-연극, GGGA-뮤지컬)"
+                  },
+                  startDate: {
+                    type: "string",
+                    description: "공연 시작일 (YYYYMMDD)"
+                  },
+                  endDate: {
+                    type: "string",
+                    description: "공연 종료일 (YYYYMMDD)"
+                  },
+                  sidoCode: {
+                    type: "string",
+                    description: "시도 코드 (예: 11-서울, 41-경기)"
+                  },
+                  gugunCode: {
+                    type: "string",
+                    description: "구군 코드 (예: 1111-강남구)"
+                  },
+                  limit: {
+                    type: "number",
+                    description: "결과 개수 (기본: 5)",
+                    default: 5
+                  }
+                },
+                required: ["genreCode", "startDate", "endDate"]
+              }
+            },
+            {
+              name: "filter_free_events",
+              description: "무료 공연만 필터링하여 검색합니다. 공연 목록을 가져온 후 각 공연의 상세 정보를 확인하여 무료 공연만 반환합니다. 기본적으로 5개의 결과를 반환하며, limit 파라미터로 조정 가능합니다.",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  genreCode: {
+                    type: "string",
+                    description: "장르 코드 (예: AAAA-연극, GGGA-뮤지컬)"
+                  },
+                  startDate: {
+                    type: "string",
+                    description: "공연 시작일 (YYYYMMDD)"
+                  },
+                  endDate: {
+                    type: "string",
+                    description: "공연 종료일 (YYYYMMDD)"
+                  },
+                  sidoCode: {
+                    type: "string",
+                    description: "시도 코드 (예: 11-서울, 41-경기)"
+                  },
+                  limit: {
+                    type: "number",
+                    description: "결과 개수 (기본: 5)",
+                    default: 5
+                  }
+                },
+                required: ["genreCode", "startDate", "endDate"]
+              }
+            },
+            {
+              name: "get_event_detail",
+              description: "공연 ID를 사용하여 상세 정보를 조회합니다. 시놉시스, 출연진, 관람료, 공연 시간, 연령 제한 등의 자세한 정보를 제공합니다.",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  eventId: {
+                    type: "string",
+                    description: "공연 ID (mt20id)"
+                  }
+                },
+                required: ["eventId"]
+              }
+            },
+            {
+              name: "get_trending_performances",
+              description: "현재 인기있는 공연과 마감이 임박한 공연을 추천합니다. 종료일이 7일 이내인 공연에 가산점을 주어 상단에 노출합니다. 기본적으로 5개의 결과를 반환하며, limit 파라미터로 조정 가능합니다.",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  genreCode: {
+                    type: "string",
+                    description: "장르 코드 (전체 조회 시 생략 가능)"
+                  },
+                  limit: {
+                    type: "number",
+                    description: "결과 개수 (기본: 5)",
+                    default: 5
+                  }
+                }
+              }
+            }
+          ]
+        }
+      });
+    }
+    
     return res.status(200).json({ 
       status: "ok",
       message: "MCP server is ready"
     });
   }
   
-  // 세션 ID가 헤더에 있으면 해당 transport 사용
   const sessionId = req.headers['x-session-id'] as string;
   let transport = sessionId ? transports.get(sessionId) : null;
   
-  // 세션을 찾지 못하면 첫 번째 활성 transport 사용
   if (!transport) {
     transport = Array.from(transports.values())[0];
   }
-  
   if (!transport) {
     return res.status(503).json({ 
       error: "Service temporarily unavailable",
       message: "No active SSE connection"
     });
-  }
-
-  try {
-    await transport.handlePostMessage(req, res);
-  } catch (error) {
-    console.error("Error handling POST message:", error);
-    if (!res.headersSent) {
-      res.status(500).json({ 
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
-  }
-});
-
-app.post("/messages", async (req: Request, res: Response) => {
-  console.error("POST request to /messages", req.headers);
-  
-  // 카카오 MCP의 초기 검증 요청에 대응
-  if (transports.size === 0) {
-    console.error("No active transport, responding with OK for discovery");
-    return res.status(200).json({ 
-      status: "ok",
-      message: "MCP server is ready"
-    });
-  }
-  
-  const sessionId = req.headers['x-session-id'] as string;
-  let transport = sessionId ? transports.get(sessionId) : null;
-  
-  if (!transport) {
-    transport = Array.from(transports.values())[0];
   }
   
   try {
