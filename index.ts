@@ -305,6 +305,17 @@ server.registerTool(
 const app = express();
 app.use(express.json());
 
+// CORS 설정 추가
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // 헬스체크 엔드포인트
 app.get("/", (req: Request, res: Response) => {
   res.json({
@@ -329,57 +340,47 @@ app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-let transport: SSEServerTransport | null = null;
+// 각 연결마다 새로운 서버와 transport 생성
+const sessions = new Map<string, { server: McpServer; transport: SSEServerTransport }>();
 
-// SSE 엔드포인트 - GET과 POST 모두 처리
 app.get("/sse", async (req: Request, res: Response) => {
-  console.error("New SSE connection established (GET)");
+  const sessionId = Math.random().toString(36).substring(7);
+  console.error(`New SSE connection established: ${sessionId}`);
   
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   
-  transport = new SSEServerTransport("/messages", res);
+  // 각 연결마다 새 서버 인스턴스 생성
+  const server = createMcpServer();
+  const transport = new SSEServerTransport("/messages", res);
+  
+  sessions.set(sessionId, { server, transport });
+  
   await server.connect(transport);
   
   const keepAlive = setInterval(() => {
-    res.write(': keepalive\n\n');
+    if (!res.writableEnded) {
+      res.write(': keepalive\n\n');
+    }
   }, 30000);
   
   req.on('close', () => {
     clearInterval(keepAlive);
-    console.error("SSE connection closed");
+    sessions.delete(sessionId);
+    console.error(`SSE connection closed: ${sessionId}`);
   });
-});
-
-// 카카오 MCP가 POST /sse로 요청하는 경우 대응
-app.post("/sse", async (req: Request, res: Response) => {
-  console.error("POST request to /sse - redirecting to /messages handler");
-  
-  // SSE 연결이 없으면 먼저 연결 생성
-  if (!transport) {
-    console.error("No transport found, creating new SSE transport");
-    
-    // 임시 응답 객체로 SSE transport 생성
-    const sseRes = res;
-    sseRes.setHeader('Content-Type', 'text/event-stream');
-    sseRes.setHeader('Cache-Control', 'no-cache');
-    sseRes.setHeader('Connection', 'keep-alive');
-    
-    transport = new SSEServerTransport("/messages", sseRes);
-    await server.connect(transport);
-  }
-  
-  // POST 요청 처리
-  await transport.handlePostMessage(req, res);
 });
 
 app.post("/messages", async (req: Request, res: Response) => {
   console.error("POST request to /messages");
   
-  if (transport) {
-    await transport.handlePostMessage(req, res);
+  // 가장 최근 세션 찾기
+  const session = Array.from(sessions.values()).pop();
+  
+  if (session) {
+    await session.transport.handlePostMessage(req, res);
   } else {
     res.status(400).json({ 
       error: "No active SSE transport session",
