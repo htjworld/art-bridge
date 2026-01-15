@@ -103,7 +103,7 @@ export interface TrendingParams {
 
 // Utility Functions
 export function getGenreList(): string[] {
-  return Object.entries(GENRE_CODES).map(([code, name]) => `${code}: ${name}`);
+  return Object.entries(GENRE_CODES).map(([code, name], index) => `${index + 1}. ${name} (${code})`);
 }
 
 function parseDate(dateStr: string): Date {
@@ -112,7 +112,7 @@ function parseDate(dateStr: string): Date {
   return new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
 }
 
-function getDaysUntilClose(endDateStr: string): number {
+export function getDaysUntilClose(endDateStr: string): number {
   const endDate = parseDate(endDateStr);
   const today = new Date();
   const diffTime = endDate.getTime() - today.getTime();
