@@ -1,24 +1,27 @@
 FROM node:22-alpine AS builder
-
 WORKDIR /app
 
+# package files 복사
 COPY package*.json ./
 COPY tsconfig.json ./
-COPY *.ts ./
 
+# 소스 코드 복사 (src 디렉토리 전체)
+COPY src/ ./src/
+
+# 의존성 설치 및 빌드
 RUN --mount=type=cache,target=/root/.npm npm install
 RUN npm run build
 
 FROM node:22-alpine AS release
-
 WORKDIR /app
 
-COPY --from=builder /app/dist/ ./
+# 빌드된 파일만 복사
+COPY --from=builder /app/dist/ ./dist/
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/package-lock.json ./
 
 ENV NODE_ENV=production
-
 RUN npm ci --omit=dev
 
+# 올바른 경로로 실행
 ENTRYPOINT ["node", "--experimental-specifier-resolution=node", "dist/index.js"]
