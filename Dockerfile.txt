@@ -1,36 +1,27 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-# 모든 필요한 파일 복사
 COPY package*.json ./
 COPY tsconfig.json ./
 COPY index.ts ./
 COPY lib.ts ./
 
-# 의존성 설치
 RUN npm install
-
-# 빌드
 RUN npm run build
-
-# 빌드 결과 확인
-RUN echo "=== Files in /app ===" && ls -la
-RUN echo "=== Files in /app/dist ===" && ls -la dist/
 
 FROM node:22-alpine AS release
 WORKDIR /app
 
-# 빌드된 dist 폴더 전체 복사
-COPY --from=builder /app/dist ./dist
+# dist 폴더 전체를 /app으로 복사
+COPY --from=builder /app/dist/ ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/package-lock.json ./
 
-# production 의존성만 설치
 ENV NODE_ENV=production
 RUN npm ci --omit=dev
 
-# dist 내용 확인
-RUN echo "=== Production files ===" && ls -la && ls -la dist/
+# 파일 구조 확인
+RUN ls -la
 
-# 명시적으로 dist/index.js 실행
-CMD ["node", "dist/index.js"]
+# /app/index.js 실행 (dist/ 없이)
+CMD ["node", "index.js"]
