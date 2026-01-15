@@ -340,7 +340,9 @@ app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-let transport: SSEServerTransport | null = null;
+// transport를 세션별로 관리
+const transports = new Map<string, SSEServerTransport>();
+const SESSION_TIMEOUT = 30 * 60 * 1000; // 30분
 
 app.get("/sse", async (req: Request, res: Response) => {
   console.error("New SSE connection established");
@@ -350,8 +352,16 @@ app.get("/sse", async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   
-  transport = new SSEServerTransport("/messages", res);
+  // 세션 ID 생성
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  const transport = new SSEServerTransport("/messages", res);
+  transports.set(sessionId, transport);
+  
   await server.connect(transport);
+  
+  // 클라이언트에 세션 ID 전송
+  res.write(`event: session\ndata: ${sessionId}\n\n`);
   
   const keepAlive = setInterval(() => {
     if (!res.writableEnded) {
@@ -359,36 +369,93 @@ app.get("/sse", async (req: Request, res: Response) => {
     }
   }, 30000);
   
+  // 세션 타임아웃 설정
+  const timeout = setTimeout(() => {
+    if (!res.writableEnded) {
+      res.end();
+      transports.delete(sessionId);
+      console.error(`Session timeout: ${sessionId}`);
+    }
+  }, SESSION_TIMEOUT);
+  
   req.on('close', () => {
     clearInterval(keepAlive);
-    console.error("SSE connection closed");
+    clearTimeout(timeout);
+    transports.delete(sessionId);
+    console.error(`SSE connection closed: ${sessionId}`);
   });
 });
 
-// 카카오가 POST /sse로 요청하는 경우 처리
 app.post("/sse", async (req: Request, res: Response) => {
-  console.error("POST request to /sse");
+  console.error("POST request to /sse", req.headers);
   
-  if (transport) {
-    await transport.handlePostMessage(req, res);
-  } else {
-    res.status(400).json({ 
-      error: "No active SSE transport session",
-      message: "Please establish SSE connection first by GET /sse"
+  // 카카오 MCP의 초기 검증 요청에 대응
+  if (transports.size === 0) {
+    console.error("No active transport, responding with OK for discovery");
+    return res.status(200).json({ 
+      status: "ok",
+      message: "MCP server is ready"
     });
+  }
+  
+  // 세션 ID가 헤더에 있으면 해당 transport 사용
+  const sessionId = req.headers['x-session-id'] as string;
+  let transport = sessionId ? transports.get(sessionId) : null;
+  
+  // 세션을 찾지 못하면 첫 번째 활성 transport 사용
+  if (!transport) {
+    transport = Array.from(transports.values())[0];
+  }
+  
+  if (!transport) {
+    return res.status(503).json({ 
+      error: "Service temporarily unavailable",
+      message: "No active SSE connection"
+    });
+  }
+
+  try {
+    await transport.handlePostMessage(req, res);
+  } catch (error) {
+    console.error("Error handling POST message:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 });
 
 app.post("/messages", async (req: Request, res: Response) => {
-  console.error("POST request to /messages");
+  console.error("POST request to /messages", req.headers);
   
-  if (transport) {
-    await transport.handlePostMessage(req, res);
-  } else {
-    res.status(400).json({ 
-      error: "No active SSE transport session",
-      message: "Please establish SSE connection first by GET /sse"
+  // 카카오 MCP의 초기 검증 요청에 대응
+  if (transports.size === 0) {
+    console.error("No active transport, responding with OK for discovery");
+    return res.status(200).json({ 
+      status: "ok",
+      message: "MCP server is ready"
     });
+  }
+  
+  const sessionId = req.headers['x-session-id'] as string;
+  let transport = sessionId ? transports.get(sessionId) : null;
+  
+  if (!transport) {
+    transport = Array.from(transports.values())[0];
+  }
+  
+  try {
+    await transport.handlePostMessage(req, res);
+  } catch (error) {
+    console.error("Error handling POST message:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 });
 
