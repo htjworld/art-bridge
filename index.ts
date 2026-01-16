@@ -391,19 +391,19 @@ app.post("/sse", async (req: Request, res: Response) => {
           let searchMessage = '';
           
           // 결과가 없으면 범위 확장
-          if (searchEvents.length === 0) {
+          if (searchEvents.length < 3) {
             // 1단계: 구군 코드 제거 (시도만)
-            if (toolArgs.gugunCode && toolArgs.sidoCode) {
-              console.error(`No results found. Expanding search: removing gugunCode`);
-              searchMessage = '🔍 해당 구/군에서 검색 결과가 없어 시/도 전체로 확장했습니다.\n\n';
+            if (toolArgs.gugunCode) {
+              console.error(`결과 없음: 구군 코드(${toolArgs.gugunCode}) 제거 후 재검색`);
+              searchMessage = '🔍 해당 구/군에 공연이 없어 범위를 넓혀 검색합니다.\n\n';
               const expandedArgs = { ...toolArgs, gugunCode: undefined };
               searchEvents = await searchEventsByLocation(expandedArgs, requestApiKey);
             }
             
             // 2단계: 시도 코드도 제거 (전국)
-            if (searchEvents.length === 0 && toolArgs.sidoCode) {
-              console.error(`Still no results. Expanding search: removing sidoCode`);
-              searchMessage = '🔍 해당 지역에서 검색 결과가 없어 전국으로 확장했습니다.\n\n';
+            if (searchEvents.length < 3 && toolArgs.sidoCode) {
+              console.error(`결과 없음: 시도 코드 제거 후 전국 검색`);
+              searchMessage = '🔍 해당 지역에 공연이 없어 전국 단위로 검색합니다.\n\n'
               const expandedArgs = { ...toolArgs, sidoCode: undefined, gugunCode: undefined };
               searchEvents = await searchEventsByLocation(expandedArgs, requestApiKey);
             }
