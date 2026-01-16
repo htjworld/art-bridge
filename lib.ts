@@ -1,16 +1,5 @@
 import { parseStringPromise } from 'xml2js';
 
-// Global API key
-let apiKey: string = '';
-
-export function setApiKey(key: string): void {
-  apiKey = key;
-}
-
-export function getApiKey(): string {
-  return apiKey;
-}
-
 // Genre codes mapping
 export const GENRE_CODES = {
   'AAAA': '연극',
@@ -158,8 +147,8 @@ function extractMinPrice(priceStr: string): number {
   return Math.min(...numbers.map(n => parseInt(n)));
 }
 
-// API Functions
-async function fetchKopisApi(endpoint: string, params: Record<string, string> = {}): Promise<string> {
+// API Functions - apiKey를 파라미터로 받도록
+async function fetchKopisApi(endpoint: string, apiKey: string, params: Record<string, string> = {}): Promise<string> {
   const baseUrl = 'http://www.kopis.or.kr/openApi/restful';
   const queryParams = new URLSearchParams({
     service: apiKey,
@@ -193,7 +182,7 @@ async function parseXmlResponse<T>(xml: string): Promise<T> {
   }
 }
 
-export async function searchEventsByLocation(params: SearchParams): Promise<PerformanceListItem[]> {
+export async function searchEventsByLocation(params: SearchParams, apiKey: string): Promise<PerformanceListItem[]> {
   const apiParams: Record<string, string> = {
     stdate: params.startDate,
     eddate: params.endDate,
@@ -210,7 +199,7 @@ export async function searchEventsByLocation(params: SearchParams): Promise<Perf
     apiParams.signgucodesub = params.gugunCode;
   }
 
-  const xml = await fetchKopisApi('/pblprfr', apiParams);
+  const xml = await fetchKopisApi('/pblprfr', apiKey, apiParams);
   const result = await parseXmlResponse<any>(xml);
 
   if (!result.dbs || !result.dbs.db) {
@@ -233,8 +222,8 @@ export async function searchEventsByLocation(params: SearchParams): Promise<Perf
   }));
 }
 
-export async function getEventDetail(eventId: string): Promise<PerformanceDetail> {
-  const xml = await fetchKopisApi(`/pblprfr/${eventId}`);
+export async function getEventDetail(eventId: string, apiKey: string): Promise<PerformanceDetail> {
+  const xml = await fetchKopisApi(`/pblprfr/${eventId}`, apiKey);
   const result = await parseXmlResponse<any>(xml);
 
   if (!result.dbs || !result.dbs.db) {
@@ -286,7 +275,7 @@ export async function getEventDetail(eventId: string): Promise<PerformanceDetail
   };
 }
 
-export async function filterFreeEvents(params: FreeEventParams): Promise<FreeEvent[]> {
+export async function filterFreeEvents(params: FreeEventParams, apiKey: string): Promise<FreeEvent[]> {
   // 30일 이내로 고정
   const today = getTodayYYYYMMDD();
   const endDate = getDateAfterDays(30);
@@ -298,14 +287,14 @@ export async function filterFreeEvents(params: FreeEventParams): Promise<FreeEve
     endDate: endDate,        // 고정값 사용
     sidoCode: params.sidoCode,
     limit: 100
-  });
+  }, apiKey);
 
   const allEventsWithPrice: FreeEvent[] = [];
 
   // 모든 이벤트의 가격 정보 수집
   for (const event of events) {
     try {
-      const detail = await getEventDetail(event.mt20id);
+      const detail = await getEventDetail(event.mt20id, apiKey);
       const price = extractMinPrice(detail.pcseguidance);
       
       allEventsWithPrice.push({
@@ -372,7 +361,7 @@ export async function filterFreeEvents(params: FreeEventParams): Promise<FreeEve
   return freeEvents.slice(0, 10);
 }
 
-async function getBoxOfficeRankings(genreCode?: string): Promise<Map<string, number>> {
+async function getBoxOfficeRankings(apiKey: string, genreCode?: string): Promise<Map<string, number>> {
   const today = getTodayYYYYMMDD();
   
   const apiParams: Record<string, string> = {
@@ -382,7 +371,7 @@ async function getBoxOfficeRankings(genreCode?: string): Promise<Map<string, num
   };
 
   try {
-    const xml = await fetchKopisApi('/boxoffice', apiParams);
+    const xml = await fetchKopisApi('/boxoffice', apiKey, apiParams);
     const result = await parseXmlResponse<any>(xml);
 
     const rankMap = new Map<string, number>();
@@ -417,14 +406,14 @@ async function getBoxOfficeRankings(genreCode?: string): Promise<Map<string, num
   }
 }
 
-export async function getTrendingPerformances(params: TrendingParams): Promise<TrendingEvent[]> {
+export async function getTrendingPerformances(params: TrendingParams, apiKey: string): Promise<TrendingEvent[]> {
   const today = new Date();
   const startDate = today.toISOString().split('T')[0].replace(/-/g, '');
   const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
     .toISOString().split('T')[0].replace(/-/g, '');
 
   // 박스오피스 순위 가져오기
-  const boxOfficeRankings = await getBoxOfficeRankings(params.genreCode);
+  const boxOfficeRankings = await getBoxOfficeRankings(apiKey, params.genreCode);
 
   // Get current performances
   const events = await searchEventsByLocation({
@@ -432,7 +421,7 @@ export async function getTrendingPerformances(params: TrendingParams): Promise<T
     startDate,
     endDate,
     limit: 50 // Fetch more to get diverse results
-  });
+  }, apiKey);
 
   // Calculate popularity and final score
   const trendingEvents: TrendingEvent[] = events.map(event => {

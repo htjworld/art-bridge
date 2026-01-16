@@ -12,7 +12,6 @@ import {
   filterFreeEvents,
   getEventDetail,
   getTrendingPerformances,
-  setApiKey,
   getDaysUntilClose,
 } from './lib.js';
 
@@ -20,7 +19,6 @@ import {
 const defaultApiKey = process.env.KOPIS_API_KEY || process.argv[2] || '';
 
 if (defaultApiKey) {
-  setApiKey(defaultApiKey);
   console.error("Art-Bridge MCP Server initializing with default API key...");
 } else {
   console.error("Art-Bridge MCP Server initializing (API key will be provided via request headers)...");
@@ -55,7 +53,7 @@ const GetTrendingPerformancesArgsSchema = z.object({
   limit: z.number().optional().default(15).describe('결과 개수 (권장: 데이터셋 많을 때 15-30개, 기본: 15)')
 });
 
-// Server setup - 간단히 하나의 서버만 사용
+// Server setup
 const server = new McpServer(
   {
     name: "art-bridge-server",
@@ -68,7 +66,6 @@ const server = new McpServer(
   }
 );
 
-// Tool registrations
 
 server.registerTool(
   "get_genre_list",
@@ -92,6 +89,7 @@ server.registerTool(
   }
 );
 
+// 나머지 tool들은 POST /sse에서 직접 처리 (API 키 필요)
 server.registerTool(
   "search_events_by_location",
   {
@@ -114,42 +112,7 @@ server.registerTool(
     annotations: { readOnlyHint: true }
   },
   async (args: z.infer<typeof SearchEventsByLocationArgsSchema>) => {
-    try {
-      const events = await searchEventsByLocation({
-        genreCode: args.genreCode,
-        startDate: args.startDate,
-        endDate: args.endDate,
-        sidoCode: args.sidoCode,
-        gugunCode: args.gugunCode,
-        limit: args.limit
-      });
-
-      if (events.length === 0) {
-        const text = "검색 조건에 맞는 공연이 없습니다.";
-        return {
-          content: [{ type: "text" as const, text }],
-          structuredContent: { content: text }
-        };
-      }
-
-      const formatted = events.map((event, index) => 
-        `${index + 1}. ${event.prfnm}\n` +
-        `   공연장: ${event.fcltynm}\n` +
-        `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
-        `   장르: ${event.genrenm}\n` +
-        `   지역: ${event.area}\n` +
-        `   상태: ${event.prfstate}\n` +
-        `   ID: ${event.mt20id}`
-      ).join('\n\n');
-
-      return {
-        content: [{ type: "text" as const, text: formatted }],
-        structuredContent: { content: formatted }
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`공연 검색 중 오류 발생: ${errorMessage}`);
-    }
+    throw new Error("This tool requires API key and should be called via POST /sse");
   }
 );
 
@@ -179,46 +142,7 @@ server.registerTool(
     annotations: { readOnlyHint: true }
   },
   async (args: z.infer<typeof FilterFreeEventsArgsSchema>) => {
-    try {
-      const events = await filterFreeEvents({
-        genreCode: args.genreCode,
-        startDate: args.startDate,
-        endDate: args.endDate,
-        sidoCode: args.sidoCode,
-        limit: args.limit
-      });
-
-      if (events.length === 0) {
-        const text = "검색 조건에 맞는 무료 공연이 없습니다.";
-        return {
-          content: [{ type: "text" as const, text }],
-          structuredContent: { content: text }
-        };
-      }
-
-      const formatted = events.map((event, index) => {
-        const daysLeft = getDaysUntilClose(event.prfpdto);
-        const closingBadge = daysLeft <= 7 && daysLeft >= 0 ? ' 🔥 마감임박!' : '';
-        
-        return (
-          `${index + 1}. ${event.prfnm}${closingBadge}\n` +
-          `   공연장: ${event.fcltynm}\n` +
-          `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
-          `   장르: ${event.genrenm}\n` +
-          `   지역: ${event.area}\n` +
-          `   관람료: ${event.pcseguidance}\n` +
-          `   ID: ${event.mt20id}`
-        );
-      }).join('\n\n');
-
-      return {
-        content: [{ type: "text" as const, text: formatted }],
-        structuredContent: { content: formatted }
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`무료 공연 검색 중 오류 발생: ${errorMessage}`);
-    }
+    throw new Error("This tool requires API key and should be called via POST /sse");
   }
 );
 
@@ -236,34 +160,7 @@ server.registerTool(
     annotations: { readOnlyHint: true }
   },
   async (args: z.infer<typeof GetEventDetailArgsSchema>) => {
-    try {
-      const detail = await getEventDetail(args.eventId);
-
-      const formatted = 
-        `=== ${detail.prfnm} ===\n\n` +
-        `공연 기간: ${detail.prfpdfrom} ~ ${detail.prfpdto}\n` +
-        `공연장: ${detail.fcltynm}\n` +
-        `장르: ${detail.genrenm}\n` +
-        `상태: ${detail.prfstate}\n\n` +
-        `출연진: ${detail.prfcast || '정보 없음'}\n` +
-        `크루: ${detail.prfcrew || '정보 없음'}\n` +
-        `공연 시간: ${detail.prfruntime || '정보 없음'}\n` +
-        `관람 연령: ${detail.prfage || '정보 없음'}\n` +
-        `관람료: ${detail.pcseguidance || '정보 없음'}\n\n` +
-        `제작사: ${detail.entrpsnm || '정보 없음'}\n` +
-        `공연 시간표: ${detail.dtguidance || '정보 없음'}\n\n` +
-        `포스터: ${detail.poster}\n` +
-        (detail.styurls.length > 0 ? `상세 이미지:\n${detail.styurls.map((url, i) => `  ${i + 1}. ${url}`).join('\n')}\n` : '') +
-        (detail.relates.length > 0 ? `\n예매 링크:\n${detail.relates.map((r, i) => `  ${i + 1}. ${r.relatenm}: ${r.relateurl}`).join('\n')}` : '');
-
-      return {
-        content: [{ type: "text" as const, text: formatted }],
-        structuredContent: { content: formatted }
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`공연 상세 정보 조회 중 오류 발생: ${errorMessage}`);
-    }
+    throw new Error("This tool requires API key and should be called via POST /sse");
   }
 );
 
@@ -292,55 +189,18 @@ server.registerTool(
     annotations: { readOnlyHint: true }
   },
   async (args: z.infer<typeof GetTrendingPerformancesArgsSchema>) => {
-    try {
-      const events = await getTrendingPerformances({
-        genreCode: args.genreCode,
-        limit: args.limit
-      });
-
-      if (events.length === 0) {
-        const text = "현재 추천할 공연이 없습니다.";
-        return {
-          content: [{ type: "text" as const, text }],
-          structuredContent: { content: text }
-        };
-      }
-
-      const formatted = events.map((event, index) => {
-        const popularityBadge = event.popularity >= 80 ? '⭐' : '';
-        // 7일 이내만 마감임박 표시 (마감임박 추천 로직은 14일 기준)
-        const closingBadge = event.daysUntilClose <= 7 && event.daysUntilClose >= 0 ? ' 🔥 마감임박!' : '';
-        
-        return (
-          `${index + 1}. ${event.prfnm}${popularityBadge}${closingBadge}\n` +
-          `   인기도: ${event.popularity}/100\n` +
-          `   공연장: ${event.fcltynm}\n` +
-          `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
-          `   장르: ${event.genrenm}\n` +
-          `   지역: ${event.area}\n` +
-          `   ID: ${event.mt20id}`
-        );
-      }).join('\n\n');
-
-      return {
-        content: [{ type: "text" as const, text: formatted }],
-        structuredContent: { content: formatted }
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`인기 공연 조회 중 오류 발생: ${errorMessage}`);
-    }
+    throw new Error("This tool requires API key and should be called via POST /sse");
   }
 );
 
 const app = express();
 app.use(express.json());
 
-// CORS 설정 추가
+// CORS 설정
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, kopis_api_key');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -352,10 +212,10 @@ app.get("/", (req: Request, res: Response) => {
   res.json({
     name: "ArtBridge MCP Server",
     version: "0.1.0",
+    protocolVersion: "2026-01-16",
     status: "running",
     endpoints: {
-      sse: "/sse",
-      messages: "/messages"
+      sse: "/sse"
     },
     tools: [
       "get_genre_list",
@@ -371,10 +231,7 @@ app.get("/health", (req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-// transport를 세션별로 관리
-const transports = new Map<string, SSEServerTransport>();
-const SESSION_TIMEOUT = 30 * 60 * 1000; // 30분
-
+// SSE 연결 - Stateless
 app.get("/sse", async (req: Request, res: Response) => {
   console.error("New SSE connection established");
   
@@ -383,352 +240,260 @@ app.get("/sse", async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   
-  // 세션 ID 생성
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  const transport = new SSEServerTransport("/messages", res);
-  transports.set(sessionId, transport);
-  
+  // Stateless: 매 연결마다 새로운 transport 생성
+  const transport = new SSEServerTransport("/sse", res);
   await server.connect(transport);
   
-  // 클라이언트에 세션 ID 전송
-  res.write(`event: session\ndata: ${sessionId}\n\n`);
-  
+  // Keepalive
   const keepAlive = setInterval(() => {
     if (!res.writableEnded) {
       res.write(': keepalive\n\n');
     }
   }, 30000);
   
-  // 세션 타임아웃 설정
-  const timeout = setTimeout(() => {
-    if (!res.writableEnded) {
-      res.end();
-      transports.delete(sessionId);
-      console.error(`Session timeout: ${sessionId}`);
-    }
-  }, SESSION_TIMEOUT);
-  
   req.on('close', () => {
     clearInterval(keepAlive);
-    clearTimeout(timeout);
-    transports.delete(sessionId);
-    console.error(`SSE connection closed: ${sessionId}`);
+    console.error("SSE connection closed");
   });
 });
 
+// POST 요청 처리 - Stateless + API 키 안전 처리
 app.post("/sse", async (req: Request, res: Response) => {
   console.error("POST request to /sse");
   console.error("Request body:", JSON.stringify(req.body, null, 2));
-  // 민감 정보 마스킹하여 로깅
-  const safeHeaders = {
-    ...req.headers,
-    kopis_api_key: req.headers['kopis_api_key'] ? '***masked***' : undefined
-  };
-  console.error("Headers:", safeHeaders);
   
-  // 카카오 PlayMCP가 헤더로 전달하는 API 키 읽기
-  const requestApiKey = req.headers['kopis_api_key'] as string;
-  if (requestApiKey) {
-    console.error("Using API key from request header");
-    setApiKey(requestApiKey);
-  }
-
+  // API 키 가져오기 (헤더 우선, 없으면 환경변수)
+  const requestApiKey = (req.headers['kopis_api_key'] as string) || defaultApiKey;
   
-  // 초기 검증 요청
-  if (transports.size === 0) {
-    console.error("No active transport, handling request directly");
-    
-    // initialize 요청
-    if (req.body?.method === 'initialize') {
-      return res.json({
-        jsonrpc: "2.0",
-        id: req.body.id,
-        result: {
-          protocolVersion: "2026-01-16",
-          capabilities: {
-            tools: {}
-          },
-          serverInfo: {
-            name: "art-bridge-server",
-            version: "0.1.0"
-          }
+  // initialize 요청
+  if (req.body?.method === 'initialize') {
+    return res.json({
+      jsonrpc: "2.0",
+      id: req.body.id,
+      result: {
+        protocolVersion: "2026-01-16",
+        capabilities: {
+          tools: {}
+        },
+        serverInfo: {
+          name: "art-bridge-server",
+          version: "0.1.0"
         }
-      });
-    }
-    
-    // tools/list 요청
-    if (req.body?.method === 'tools/list') {
-      return res.json({
-        jsonrpc: "2.0",
-        id: req.body.id,
-        result: {
-          tools: [
-            {
-              name: "get_genre_list",
-              description: "사용 가능한 모든 공연 장르 목록을 반환합니다. 사용자가 어떤 장르의 공연을 검색할 수 있는지 안내할 때 사용하세요.",
-              inputSchema: {
-                type: "object",
-                properties: {}
-              }
-            },
-            {
-              name: "search_events_by_location",
-              description: "특정 지역과 기간의 공연을 검색합니다. 시도 코드와 구군 코드를 사용하여 원하는 지역의 공연을 찾을 수 있습니다. **중요: 날짜 미지정시 오늘부터 30일 이내 공연으로, limit은 15-30으로 설정하여 충분한 선택지를 확보하세요.** 최종 답변 시 그 중 베스트 3-5개를 추천하고, 적으면 있는 만큼 추천하세요. 검색 결과가 없으면 조건을 완화한 대안을 제시하세요.",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  genreCode: {
-                    type: "string",
-                    description: "장르 코드 (예: AAAA-연극, GGGA-뮤지컬)"
-                  },
-                  startDate: {
-                    type: "string",
-                    description: "공연 시작일 (YYYYMMDD)"
-                  },
-                  endDate: {
-                    type: "string",
-                    description: "공연 종료일 (YYYYMMDD)"
-                  },
-                  sidoCode: {
-                    type: "string",
-                    description: "시도 코드 (예: 11-서울, 41-경기)"
-                  },
-                  gugunCode: {
-                    type: "string",
-                    description: "구군 코드 (예: 1111-강남구)"
-                  },
-                  limit: {
-                    type: "number",
-                    description: "결과 개수 (권장: 15-30개, 기본: 15)",
-                    default: 15
-                  }
-                },
-                required: ["genreCode", "startDate", "endDate"]
-              }
-            },
-            {
-              name: "filter_free_events",
-              description: "무료 공연 우선 검색 (30일 고정).\n\n" +
-                            "**검색 전략:**\n" +
-                            "- 전국 무료 공연 10개 우선 수집\n" +
-                            "- 무료 5개 미만 → 저렴한 유료로 10개 채움\n" +
-                            "- sidoCode로 지역 필터링 가능\n" +
-                            "- startDate/endDate는 무시됨 (항상 오늘~30일)\n\n" +
-                            "**최종 답변:** 3-5개만 추천",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  genreCode: {
-                    type: "string",
-                    description: "장르 코드 (예: AAAA-연극, GGGA-뮤지컬)"
-                  },
-                  startDate: {
-                    type: "string",
-                    description: "공연 시작일 (YYYYMMDD)"
-                  },
-                  endDate: {
-                    type: "string",
-                    description: "공연 종료일 (YYYYMMDD)"
-                  },
-                  sidoCode: {
-                    type: "string",
-                    description: "시도 코드 (예: 11-서울, 41-경기)"
-                  },
-                  limit: {
-                    type: "number",
-                    description: "결과 개수 (권장: 15-30개, 기본: 15)",
-                    default: 15
-                  }
-                },
-                required: ["genreCode", "startDate", "endDate"]
-              }
-            },
-            {
-              name: "get_event_detail",
-              description: "공연 ID를 사용하여 상세 정보를 조회합니다. 시놉시스, 출연진, 관람료, 공연 시간, 연령 제한, 예매 링크 등의 자세한 정보를 제공합니다.",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  eventId: {
-                    type: "string",
-                    description: "공연 ID (mt20id)"
-                  }
-                },
-                required: ["eventId"]
-              }
-            },
-            {
-              name: "get_trending_performances",
-              description: "KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다. 인기도(0-100)를 기준으로 정렬하며, 종료일이 14일 이내인 공연에는 가산점(+10)을 부여합니다. **중요: 날짜 미지정시 오늘부터 30일 이내 공연으로, limit은 15-30으로 설정하여 다양한 선택지를 확보하고, 최종 답변 시 3-5개만 추천.**",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  genreCode: {
-                    type: "string",
-                    description: "장르 코드 (전체 조회 시 생략 가능)"
-                  },
-                  limit: {
-                    type: "number",
-                    description: "결과 개수 (권장: 15-30개, 기본: 15)",
-                    default: 15
-                  }
-                }
+      }
+    });
+  }
+  
+  // tools/list 요청
+  if (req.body?.method === 'tools/list') {
+    return res.json({
+      jsonrpc: "2.0",
+      id: req.body.id,
+      result: {
+        tools: [
+          {
+            name: "get_genre_list",
+            description: "사용 가능한 모든 공연 장르 목록을 반환합니다.",
+            inputSchema: {
+              type: "object",
+              properties: {}
+            }
+          },
+          {
+            name: "search_events_by_location",
+            description: "특정 지역과 기간의 공연을 검색합니다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                genreCode: { type: "string" },
+                startDate: { type: "string" },
+                endDate: { type: "string" },
+                sidoCode: { type: "string" },
+                gugunCode: { type: "string" },
+                limit: { type: "number", default: 15 }
+              },
+              required: ["genreCode", "startDate", "endDate"]
+            }
+          },
+          {
+            name: "filter_free_events",
+            description: "무료 공연만 필터링하여 검색합니다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                genreCode: { type: "string" },
+                startDate: { type: "string" },
+                endDate: { type: "string" },
+                sidoCode: { type: "string" },
+                limit: { type: "number", default: 5 }
+              },
+              required: ["genreCode", "startDate", "endDate"]
+            }
+          },
+          {
+            name: "get_event_detail",
+            description: "공연 ID를 사용하여 상세 정보를 조회합니다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                eventId: { type: "string" }
+              },
+              required: ["eventId"]
+            }
+          },
+          {
+            name: "get_trending_performances",
+            description: "KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                genreCode: { type: "string" },
+                limit: { type: "number", default: 15 }
               }
             }
-          ]
+          }
+        ]
+      }
+    });
+  }
+
+  // tools/call 직접 처리 - API 키를 각 함수에 전달
+  if (req.body?.method === 'tools/call') {
+    const toolName = req.body.params?.name;
+    const toolArgs = req.body.params?.arguments || {};
+    
+    // API 키 확인
+    if (!requestApiKey && toolName !== 'get_genre_list') {
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        error: {
+          code: -32001,
+          message: "API key is required. Please provide KOPIS_API_KEY in header or environment variable."
         }
       });
     }
-
-    // tools/call 직접 처리
-    if (req.body?.method === 'tools/call') {
-      const toolName = req.body.params?.name;
-      const toolArgs = req.body.params?.arguments || {};
+    
+    console.error(`Direct tool call: ${toolName}`);
+    
+    try {
+      let result;
       
-      console.error(`Direct tool call: ${toolName}`);
-      
-      try {
-        let result;
-        
-        switch (toolName) {
-          case 'get_genre_list':
-            const genreList = getGenreList();
-            result = { content: [{ type: "text", text: genreList.join('\n') }] };
-            break;
-            
-          case 'search_events_by_location':
-            const searchEvents = await searchEventsByLocation(toolArgs);
-            const searchFormatted = searchEvents.length === 0
-              ? "검색 조건에 맞는 공연이 없습니다."
-              : searchEvents.map((event, index) => 
-                  `${index + 1}. ${event.prfnm}\n` +
-                  `   공연장: ${event.fcltynm}\n` +
-                  `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
-                  `   장르: ${event.genrenm}\n` +
-                  `   지역: ${event.area}\n` +
-                  `   상태: ${event.prfstate}\n` +
-                  `   ID: ${event.mt20id}`
-                ).join('\n\n');
-            result = { content: [{ type: "text", text: searchFormatted }] };
-            break;
-            
-          case 'filter_free_events':
-            const freeEvents = await filterFreeEvents(toolArgs);
-            const freeFormatted = freeEvents.length === 0
-              ? "검색 조건에 맞는 무료 공연이 없습니다."
-              : freeEvents.map((event, index) => 
-                  `${index + 1}. ${event.prfnm}\n` +
+      switch (toolName) {
+        case 'get_genre_list':
+          const genreList = getGenreList();
+          result = { content: [{ type: "text", text: genreList.join('\n') }] };
+          break;
+          
+        case 'search_events_by_location':
+          const searchEvents = await searchEventsByLocation(toolArgs, requestApiKey);
+          const searchFormatted = searchEvents.length === 0
+            ? "검색 조건에 맞는 공연이 없습니다."
+            : searchEvents.map((event, index) => 
+                `${index + 1}. ${event.prfnm}\n` +
+                `   공연장: ${event.fcltynm}\n` +
+                `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
+                `   장르: ${event.genrenm}\n` +
+                `   지역: ${event.area}\n` +
+                `   상태: ${event.prfstate}\n` +
+                `   ID: ${event.mt20id}`
+              ).join('\n\n');
+          result = { content: [{ type: "text", text: searchFormatted }] };
+          break;
+          
+        case 'filter_free_events':
+          const freeEvents = await filterFreeEvents(toolArgs, requestApiKey);
+          const freeFormatted = freeEvents.length === 0
+            ? "검색 조건에 맞는 무료 공연이 없습니다."
+            : freeEvents.map((event, index) => {
+                const daysLeft = getDaysUntilClose(event.prfpdto);
+                const closingBadge = daysLeft <= 7 && daysLeft >= 0 ? ' 🔥 마감임박!' : '';
+                return (
+                  `${index + 1}. ${event.prfnm}${closingBadge}\n` +
                   `   공연장: ${event.fcltynm}\n` +
                   `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
                   `   장르: ${event.genrenm}\n` +
                   `   지역: ${event.area}\n` +
                   `   관람료: ${event.pcseguidance}\n` +
                   `   ID: ${event.mt20id}`
-                ).join('\n\n');
-            result = { content: [{ type: "text", text: freeFormatted }] };
-            break;
-            
-          case 'get_event_detail':
-            const detail = await getEventDetail(toolArgs.eventId);
-            const detailFormatted = 
-              `=== ${detail.prfnm} ===\n\n` +
-              `공연 기간: ${detail.prfpdfrom} ~ ${detail.prfpdto}\n` +
-              `공연장: ${detail.fcltynm}\n` +
-              `장르: ${detail.genrenm}\n` +
-              `상태: ${detail.prfstate}\n\n` +
-              `출연진: ${detail.prfcast || '정보 없음'}\n` +
-              `크루: ${detail.prfcrew || '정보 없음'}\n` +
-              `공연 시간: ${detail.prfruntime || '정보 없음'}\n` +
-              `관람 연령: ${detail.prfage || '정보 없음'}\n` +
-              `관람료: ${detail.pcseguidance || '정보 없음'}\n\n` +
-              `제작사: ${detail.entrpsnm || '정보 없음'}\n` +
-              `공연 시간표: ${detail.dtguidance || '정보 없음'}\n\n` +
-              `포스터: ${detail.poster}\n` +
-              (detail.styurls.length > 0 ? `상세 이미지:\n${detail.styurls.map((url, i) => `  ${i + 1}. ${url}`).join('\n')}\n` : '') +
-              (detail.relates.length > 0 ? `\n예매 링크:\n${detail.relates.map((r, i) => `  ${i + 1}. ${r.relatenm}: ${r.relateurl}`).join('\n')}` : '');
-            result = { content: [{ type: "text", text: detailFormatted }] };
-            break;
-            
-          case 'get_trending_performances':
-            const trendingEvents = await getTrendingPerformances(toolArgs);
-            const trendingFormatted = trendingEvents.length === 0
-              ? "현재 추천할 공연이 없습니다."
-              : trendingEvents.map((event, index) => {
-                  const popularityBadge = event.popularity >= 80 ? '⭐' : '';
-                  const closingBadge = event.daysUntilClose <= 7 && event.daysUntilClose >= 0 ? ' 🔥 마감임박!' : '';
-                  return (
-                    `${index + 1}. ${event.prfnm}${popularityBadge}${closingBadge}\n` +
-                    `   인기도: ${event.popularity}/100\n` +
-                    `   공연장: ${event.fcltynm}\n` +
-                    `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
-                    `   장르: ${event.genrenm}\n` +
-                    `   지역: ${event.area}\n` +
-                    `   ID: ${event.mt20id}`
-                  );
-                }).join('\n\n');
-            result = { content: [{ type: "text", text: trendingFormatted }] };
-            break;
-            
-          default:
-            throw new Error(`Unknown tool: ${toolName}`);
-        }
-        
-        return res.json({
-          jsonrpc: "2.0",
-          id: req.body.id,
-          result
-        });
-        
-      } catch (error) {
-        console.error(`Error calling tool ${toolName}:`, error);
-        return res.json({
-          jsonrpc: "2.0",
-          id: req.body.id,
-          error: {
-            code: -32603,
-            message: error instanceof Error ? error.message : String(error)
-          }
-        });
+                );
+              }).join('\n\n');
+          result = { content: [{ type: "text", text: freeFormatted }] };
+          break;
+          
+        case 'get_event_detail':
+          const detail = await getEventDetail(toolArgs.eventId, requestApiKey);
+          const detailFormatted = 
+            `=== ${detail.prfnm} ===\n\n` +
+            `공연 기간: ${detail.prfpdfrom} ~ ${detail.prfpdto}\n` +
+            `공연장: ${detail.fcltynm}\n` +
+            `장르: ${detail.genrenm}\n` +
+            `상태: ${detail.prfstate}\n\n` +
+            `출연진: ${detail.prfcast || '정보 없음'}\n` +
+            `크루: ${detail.prfcrew || '정보 없음'}\n` +
+            `공연 시간: ${detail.prfruntime || '정보 없음'}\n` +
+            `관람 연령: ${detail.prfage || '정보 없음'}\n` +
+            `관람료: ${detail.pcseguidance || '정보 없음'}\n\n` +
+            `제작사: ${detail.entrpsnm || '정보 없음'}\n` +
+            `공연 시간표: ${detail.dtguidance || '정보 없음'}\n\n` +
+            `포스터: ${detail.poster}\n` +
+            (detail.styurls.length > 0 ? `상세 이미지:\n${detail.styurls.map((url, i) => `  ${i + 1}. ${url}`).join('\n')}\n` : '') +
+            (detail.relates.length > 0 ? `\n예매 링크:\n${detail.relates.map((r, i) => `  ${i + 1}. ${r.relatenm}: ${r.relateurl}`).join('\n')}` : '');
+          result = { content: [{ type: "text", text: detailFormatted }] };
+          break;
+          
+        case 'get_trending_performances':
+          const trendingEvents = await getTrendingPerformances(toolArgs, requestApiKey);
+          const trendingFormatted = trendingEvents.length === 0
+            ? "현재 추천할 공연이 없습니다."
+            : trendingEvents.map((event, index) => {
+                const popularityBadge = event.popularity >= 80 ? '⭐' : '';
+                const closingBadge = event.daysUntilClose <= 7 && event.daysUntilClose >= 0 ? ' 🔥 마감임박!' : '';
+                return (
+                  `${index + 1}. ${event.prfnm}${popularityBadge}${closingBadge}\n` +
+                  `   인기도: ${event.popularity}/100\n` +
+                  `   공연장: ${event.fcltynm}\n` +
+                  `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
+                  `   장르: ${event.genrenm}\n` +
+                  `   지역: ${event.area}\n` +
+                  `   ID: ${event.mt20id}`
+                );
+              }).join('\n\n');
+          result = { content: [{ type: "text", text: trendingFormatted }] };
+          break;
+          
+        default:
+          throw new Error(`Unknown tool: ${toolName}`);
       }
-    }
-    
-    return res.status(200).json({ 
-      status: "ok",
-      message: "MCP server is ready"
-    });
-  }
-  
-  const sessionId = req.headers['x-session-id'] as string;
-  let transport = sessionId ? transports.get(sessionId) : null;
-  
-  if (!transport) {
-    transport = Array.from(transports.values())[0];
-  }
-
-  if (!transport) {
-    return res.status(503).json({ 
-      error: "Service temporarily unavailable",
-      message: "No active SSE connection"
-    });
-  }
-  
-  try {
-    await transport.handlePostMessage(req, res);
-  } catch (error) {
-    console.error("Error handling POST message:", error);
-    if (!res.headersSent) {
-      res.status(500).json({ 
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : String(error)
+      
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        result
+      });
+      
+    } catch (error) {
+      console.error(`Error calling tool ${toolName}:`, error);
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : String(error)
+        }
       });
     }
   }
+  
+  return res.status(200).json({ 
+    status: "ok",
+    message: "MCP server is ready"
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.error(`ArtBridge MCP Server running on port ${PORT}`);
+  console.error(`Protocol Version: 2026-01-16`);
   console.error(`Health check: http://localhost:${PORT}/health`);
   console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
 });
