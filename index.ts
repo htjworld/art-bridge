@@ -66,6 +66,8 @@ const server = new McpServer(
   }
 );
 
+// Tool registrations (SDK의 tool handler는 직접 API 키를 받을 수 없으므로, 
+// POST /sse에서 직접 처리하는 방식 사용)
 
 server.registerTool(
   "get_genre_list",
@@ -300,7 +302,7 @@ app.post("/sse", async (req: Request, res: Response) => {
           },
           {
             name: "search_events_by_location",
-            description: "특정 지역과 기간의 공연을 검색합니다.",
+            description: "특정 지역과 기간의 공연을 검색합니다. 검색 결과가 없으면 자동으로 구/군 → 시/도 → 전국 순으로 범위를 확장합니다.",
             inputSchema: {
               type: "object",
               properties: {
@@ -316,7 +318,7 @@ app.post("/sse", async (req: Request, res: Response) => {
           },
           {
             name: "filter_free_events",
-            description: "무료 공연만 필터링하여 검색합니다.",
+            description: "무료 공연만 필터링하여 검색합니다. 무료 공연이 부족하면 저렴한 유료 공연으로 채워 반환합니다.",
             inputSchema: {
               type: "object",
               properties: {
@@ -342,7 +344,7 @@ app.post("/sse", async (req: Request, res: Response) => {
           },
           {
             name: "get_trending_performances",
-            description: "KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다.",
+            description: "KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다. 검색 결과가 없으면 전체 장르로 확장하여 추천합니다.",
             inputSchema: {
               type: "object",
               properties: {
@@ -385,10 +387,38 @@ app.post("/sse", async (req: Request, res: Response) => {
           break;
           
         case 'search_events_by_location':
-          const searchEvents = await searchEventsByLocation(toolArgs, requestApiKey);
+          let searchEvents = await searchEventsByLocation(toolArgs, requestApiKey);
+          let searchMessage = '';
+          
+          // 결과가 없으면 범위 확장
+          if (searchEvents.length === 0) {
+            // 1단계: 구군 코드 제거 (시도만)
+            if (toolArgs.gugunCode && toolArgs.sidoCode) {
+              console.error(`No results found. Expanding search: removing gugunCode`);
+              searchMessage = '🔍 해당 구/군에서 검색 결과가 없어 시/도 전체로 확장했습니다.\n\n';
+              const expandedArgs = { ...toolArgs, gugunCode: undefined };
+              searchEvents = await searchEventsByLocation(expandedArgs, requestApiKey);
+            }
+            
+            // 2단계: 시도 코드도 제거 (전국)
+            if (searchEvents.length === 0 && toolArgs.sidoCode) {
+              console.error(`Still no results. Expanding search: removing sidoCode`);
+              searchMessage = '🔍 해당 지역에서 검색 결과가 없어 전국으로 확장했습니다.\n\n';
+              const expandedArgs = { ...toolArgs, sidoCode: undefined, gugunCode: undefined };
+              searchEvents = await searchEventsByLocation(expandedArgs, requestApiKey);
+            }
+            
+            // 3단계: limit 증가
+            if (searchEvents.length === 0) {
+              console.error(`Still no results. Expanding search: increasing limit`);
+              const expandedArgs = { ...toolArgs, sidoCode: undefined, gugunCode: undefined, limit: 50 };
+              searchEvents = await searchEventsByLocation(expandedArgs, requestApiKey);
+            }
+          }
+          
           const searchFormatted = searchEvents.length === 0
-            ? "검색 조건에 맞는 공연이 없습니다."
-            : searchEvents.map((event, index) => 
+            ? "검색 조건에 맞는 공연이 없습니다. 날짜 범위를 넓혀보시거나 다른 장르를 검색해보세요."
+            : searchMessage + searchEvents.map((event, index) => 
                 `${index + 1}. ${event.prfnm}\n` +
                 `   공연장: ${event.fcltynm}\n` +
                 `   기간: ${event.prfpdfrom} ~ ${event.prfpdto}\n` +
@@ -442,10 +472,30 @@ app.post("/sse", async (req: Request, res: Response) => {
           break;
           
         case 'get_trending_performances':
-          const trendingEvents = await getTrendingPerformances(toolArgs, requestApiKey);
+          let trendingEvents = await getTrendingPerformances(toolArgs, requestApiKey);
+          let trendingMessage = '';
+          
+          // 결과가 없으면 범위 확장
+          if (trendingEvents.length === 0) {
+            // 1단계: 장르 제거 (전체 장르)
+            if (toolArgs.genreCode) {
+              console.error(`No trending results. Expanding: removing genreCode`);
+              trendingMessage = '🔍 해당 장르의 인기 공연이 없어 전체 장르로 확장했습니다.\n\n';
+              const expandedArgs = { ...toolArgs, genreCode: undefined };
+              trendingEvents = await getTrendingPerformances(expandedArgs, requestApiKey);
+            }
+            
+            // 2단계: limit 증가
+            if (trendingEvents.length === 0) {
+              console.error(`Still no trending results. Expanding: increasing limit`);
+              const expandedArgs = { ...toolArgs, genreCode: undefined, limit: 100 };
+              trendingEvents = await getTrendingPerformances(expandedArgs, requestApiKey);
+            }
+          }
+          
           const trendingFormatted = trendingEvents.length === 0
-            ? "현재 추천할 공연이 없습니다."
-            : trendingEvents.map((event, index) => {
+            ? "현재 추천할 공연이 없습니다. 다른 날짜나 장르를 검색해보세요."
+            : trendingMessage + trendingEvents.map((event, index) => {
                 const popularityBadge = event.popularity >= 80 ? '⭐' : '';
                 const closingBadge = event.daysUntilClose <= 7 && event.daysUntilClose >= 0 ? ' 🔥 마감임박!' : '';
                 return (
