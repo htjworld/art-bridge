@@ -445,7 +445,7 @@ app.post("/sse", async (req: Request, res: Response) => {
         jsonrpc: "2.0",
         id: req.body.id,
         result: {
-          protocolVersion: "2024-11-05",
+          protocolVersion: "2026-01-16",
           capabilities: {
             tools: {}
           },
