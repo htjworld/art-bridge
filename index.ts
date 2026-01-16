@@ -33,7 +33,7 @@ const SearchEventsByLocationArgsSchema = z.object({
   endDate: z.string().describe('공연 종료일 (YYYYMMDD)'),
   sidoCode: z.string().optional().describe('시도 코드 (예: 11-서울, 41-경기)'),
   gugunCode: z.string().optional().describe('구군 코드 (예: 1111-강남구)'),
-  limit: z.number().optional().default(15).describe('결과 개수 (권장: 데이터셋 많을 때 15-30개, 기본: 15)')
+  limit: z.number().optional().default(20).describe('결과 개수 (기본: 20)')
 });
 
 const FilterFreeEventsArgsSchema = z.object({
@@ -41,7 +41,7 @@ const FilterFreeEventsArgsSchema = z.object({
   startDate: z.string().describe('공연 시작일 (YYYYMMDD)'),
   endDate: z.string().describe('공연 종료일 (YYYYMMDD)'),
   sidoCode: z.string().optional().describe('시도 코드 (예: 11-서울, 41-경기)'),
-  limit: z.number().optional().default(10).describe('결과 개수 (권장: 데이터셋 많을 때 10개, 기본: 5)')
+  limit: z.number().optional().default(20).describe('결과 개수 (기본: 20)')
 });
 
 const GetEventDetailArgsSchema = z.object({
@@ -50,7 +50,7 @@ const GetEventDetailArgsSchema = z.object({
 
 const GetTrendingPerformancesArgsSchema = z.object({
   genreCode: z.string().optional().describe('장르 코드 (전체 조회 시 생략 가능)'),
-  limit: z.number().optional().default(15).describe('결과 개수 (권장: 데이터셋 많을 때 15-30개, 기본: 15)')
+  limit: z.number().optional().default(20).describe('결과 개수 (기본: 20)')
 });
 
 // Server setup
@@ -99,8 +99,8 @@ server.registerTool(
     description:
       "특정 지역과 기간의 공연을 검색합니다. " +
       "시도 코드와 구군 코드를 사용하여 원하는 지역의 공연을 찾을 수 있습니다. " +
-      "**중요: limit은 15-30으로 설정하여 충분한 선택지를 확보하세요.** " +
-      "검색 결과가 많으면 그 중 베스트 3-5개를 추천하고, 적으면 있는 만큼 추천하세요. " +
+      "**중요: limit은 20으로 설정하여 충분한 선택지를 확보하세요.** " +
+      "검색 결과가 많으면 그 중 베스트 5개를 추천하고, 적으면 있는 만큼 추천하세요. " +
       "검색 결과가 없으면 조건을 완화한 대안을 제시하세요.",
     inputSchema: {
       genreCode: z.string().describe('장르 코드 (예: AAAA-연극, GGGA-뮤지컬)'),
@@ -108,7 +108,7 @@ server.registerTool(
       endDate: z.string().describe('공연 종료일 (YYYYMMDD)'),
       sidoCode: z.string().optional().describe('시도 코드 (예: 11-서울, 41-경기)'),
       gugunCode: z.string().optional().describe('구군 코드 (예: 1111-강남구)'),
-      limit: z.number().optional().default(15).describe('결과 개수 (권장: 데이터셋 많을 때 15-30개, 기본: 15)')
+      limit: z.number().optional().default(20).describe('결과 개수 (기본: 20)')
     },
     outputSchema: { content: z.string() },
     annotations: { readOnlyHint: true }
@@ -129,16 +129,16 @@ server.registerTool(
       "- 사용자가 날짜를 지정하지 않으면: 오늘부터 30일 이내 공연 중 오늘/내일에 공연이 있는 것을 우선 추천\n" +
       "- 사용자가 '오늘', '내일', '이번주', '다음주' 등을 지정하면: 해당 기간에 맞춰 startDate/endDate 계산\n\n" +
       "**중요 - 결과 처리:**\n" +
-      "- 이 도구는 항상 5-10개의 결과를 반환합니다 (limit 파라미터 사용)\n" +
-      "- 최종 답변 시: 그 중 베스트 3-5개만 선택하여 사용자에게 추천\n" +
-      "- 결과가 3-5개 미만이면: 있는 만큼만 추천\n" +
+      "- 이 도구는 항상 20개의 결과를 반환합니다 (limit 파라미터 사용)\n" +
+      "- 최종 답변 시: 그 중 베스트 5개만 선택하여 사용자에게 추천\n" +
+      "- 결과가 5개 미만이면: 있는 만큼만 추천\n" +
       "- 결과가 없으면: 유료 공연 중 저렴한 것을 대안으로 제시",
     inputSchema: {
       genreCode: z.string().describe('장르 코드 (예: AAAA-연극, GGGA-뮤지컬)'),
       startDate: z.string().describe('공연 시작일 (YYYYMMDD)'),
       endDate: z.string().describe('공연 종료일 (YYYYMMDD)'),
       sidoCode: z.string().optional().describe('시도 코드 (예: 11-서울, 41-경기)'),
-      limit: z.number().optional().default(5).describe('결과 개수 (기본: 5)')
+      limit: z.number().optional().default(20).describe('결과 개수 (기본: 20)')
     },
     outputSchema: { content: z.string() },
     annotations: { readOnlyHint: true }
@@ -177,15 +177,15 @@ server.registerTool(
       "- 이 도구는 오늘부터 향후 진행 중인 모든 공연을 대상으로 합니다 (30일 제한 없음)\n" +
       "- 사용자가 날짜를 지정하지 않으면: 오늘/내일에 공연이 있는 것을 우선 추천\n\n" +
       "**중요 - 결과 처리:**\n" +
-      "- 이 도구는 항상 15-30개의 결과를 반환합니다 (limit 파라미터 사용)\n" +
-      "- 다음 도구 호출이 필요한 경우: 15-30개를 모두 활용\n" +
-      "- 최종 답변 시: 그 중 베스트 3-5개만 선택하여 사용자에게 추천\n" +
-      "- 결과가 3-5개 미만이면: 있는 만큼만 추천\n\n" +
+      "- 이 도구는 항상 20개의 결과를 반환합니다 (limit 파라미터 사용)\n" +
+      "- 다음 도구 호출이 필요한 경우: 20개를 모두 활용\n" +
+      "- 최종 답변 시: 그 중 베스트 5개만 선택하여 사용자에게 추천\n" +
+      "- 결과가 5개 미만이면: 있는 만큼만 추천\n\n" +
       "**마감임박 표시:**\n" +
       "- 7일 이내 종료: 🔥 마감임박! 표시 (추천 로직은 14일 기준으로 가산점)",
     inputSchema: {
       genreCode: z.string().optional().describe('장르 코드 (전체 조회 시 생략 가능)'),
-      limit: z.number().optional().default(15).describe('결과 개수 (권장: 데이터셋 많을 때 15-30개, 기본: 15)')
+      limit: z.number().optional().default(20).describe('결과 개수 (기본: 20)')
     },
     outputSchema: { content: z.string() },
     annotations: { readOnlyHint: true }
@@ -311,7 +311,7 @@ app.post("/sse", async (req: Request, res: Response) => {
                 endDate: { type: "string" },
                 sidoCode: { type: "string" },
                 gugunCode: { type: "string" },
-                limit: { type: "number", default: 15 }
+                limit: { type: "number", default: 20 }
               },
               required: ["genreCode", "startDate", "endDate"]
             }
@@ -326,7 +326,7 @@ app.post("/sse", async (req: Request, res: Response) => {
                 startDate: { type: "string" },
                 endDate: { type: "string" },
                 sidoCode: { type: "string" },
-                limit: { type: "number", default: 5 }
+                limit: { type: "number", default: 20 }
               },
               required: ["genreCode", "startDate", "endDate"]
             }
@@ -349,7 +349,7 @@ app.post("/sse", async (req: Request, res: Response) => {
               type: "object",
               properties: {
                 genreCode: { type: "string" },
-                limit: { type: "number", default: 15 }
+                limit: { type: "number", default: 20 }
               }
             }
           }

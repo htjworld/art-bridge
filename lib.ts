@@ -187,7 +187,7 @@ export async function searchEventsByLocation(params: SearchParams, apiKey: strin
     stdate: params.startDate,
     eddate: params.endDate,
     cpage: '1',
-    rows: String(params.limit || 5),
+    rows: String(params.limit || 20),
     shcate: params.genreCode
   };
 
