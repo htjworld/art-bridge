@@ -61,7 +61,7 @@ export class KopisService {
   }
 
   formatEventsMarkdown(data: any): string {
-    const { events, searchLevel, message } = data;
+    const { events, message } = data;
     
     let markdown = `# 🎪 공연 검색 결과\n\n`;
     markdown += `> ${message}\n\n`;
@@ -74,7 +74,8 @@ export class KopisService {
     markdown += `**총 ${events.length}개의 공연**\n\n`;
     markdown += `---\n\n`;
 
-    events.forEach((event: any, index: number) => {
+    for (let index = 0; index < events.length; index++) {
+      const event = events[index];
       markdown += `## ${index + 1}. ${event.prfnm || '제목 없음'}\n\n`;
       
       if (event.poster) {
@@ -99,7 +100,7 @@ export class KopisService {
         markdown += `\n> ⚠️ 결과가 너무 많아 ${index + 1}개까지만 표시합니다.\n`;
         break;
       }
-    });
+    }
 
     return this.truncateIfNeeded(markdown);
   }
@@ -119,7 +120,8 @@ export class KopisService {
     markdown += `**무료 공연 ${freeCount}개 | 유료 공연 ${paidCount}개**\n\n`;
     markdown += `---\n\n`;
 
-    events.forEach((event: any, index: number) => {
+    for (let index = 0; index < events.length; index++) {
+      const event = events[index];
       const isFree = event.pcseguidance?.toLowerCase().includes('무료') || 
                      event.pcseguidance === '0' || 
                      event.pcseguidance === '0원';
@@ -141,7 +143,7 @@ export class KopisService {
         markdown += `\n> ⚠️ 결과가 너무 많아 ${index + 1}개까지만 표시합니다.\n`;
         break;
       }
-    });
+    }
 
     return this.truncateIfNeeded(markdown);
   }
@@ -228,7 +230,8 @@ export class KopisService {
     markdown += `**총 ${count}개의 인기 공연**\n\n`;
     markdown += `---\n\n`;
 
-    performances.forEach((perf: any, index: number) => {
+    for (let index = 0; index < performances.length; index++) {
+      const perf = performances[index];
       markdown += `## ${perf.rank}위. ${perf.indicators} ${perf.prfnm || '제목 없음'}\n\n`;
       
       if (perf.poster) {
@@ -252,7 +255,7 @@ export class KopisService {
         markdown += `\n> ⚠️ 결과가 너무 많아 ${index + 1}개까지만 표시합니다.\n`;
         break;
       }
-    });
+    }
 
     return this.truncateIfNeeded(markdown);
   }
@@ -337,15 +340,15 @@ export class KopisService {
     });
 
     // Separate free and paid events
-    const freeEvents = events.filter(e => 
+    const freeEvents = events.filter((e: any) => 
       e.pcseguidance?.toLowerCase().includes('무료') || 
       e.pcseguidance === '0' ||
       e.pcseguidance === '0원'
     );
 
-    const paidEvents = events.filter(e => 
+    const paidEvents = events.filter((e: any) => 
       !freeEvents.includes(e)
-    ).sort((a, b) => {
+    ).sort((a: any, b: any) => {
       const priceA = this.extractMinPrice(a.pcseguidance);
       const priceB = this.extractMinPrice(b.pcseguidance);
       return priceA - priceB;
@@ -442,7 +445,7 @@ export class KopisService {
         };
       });
 
-      rankedEvents.sort((a, b) => b.popularityScore - a.popularityScore);
+      rankedEvents.sort((a: any, b: any) => b.popularityScore - a.popularityScore);
 
       const result = rankedEvents.slice(0, validLimit);
 

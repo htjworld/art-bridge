@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/transports/streamableHttp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -42,24 +42,6 @@ const server = new Server(
     },
   }
 );
-
-// Helper function to get API key from request headers or env
-function getApiKey(req: Request): string {
-  // Priority 1: Custom header (for PlayMCP)
-  const headerKey = req.headers['x-kopis-api-key'] as string;
-  if (headerKey) return headerKey;
-
-  // Priority 2: Authorization header
-  const authHeader = req.headers['authorization'] as string;
-  if (authHeader?.startsWith('Bearer ')) {
-    return authHeader.substring(7);
-  }
-
-  // Priority 3: Environment variable (fallback)
-  if (config.kopisApiKey) return config.kopisApiKey;
-
-  throw new Error('KOPIS API key is required. Please provide it via X-Kopis-Api-Key header or Authorization Bearer token.');
-}
 
 // Define tools
 const tools: Tool[] = [
@@ -187,12 +169,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 // Call tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
-    // Get API key from request headers
-    const apiKey = getApiKey(extra.request as Request);
+    // Get API key from environment (Railway will provide via Variables)
+    const apiKey = config.kopisApiKey;
+    if (!apiKey) {
+      throw new Error('KOPIS API key is required. Please set KOPIS_API_KEY environment variable.');
+    }
+    
     const kopisService = new KopisService(apiKey);
 
     let result: any;
@@ -212,7 +198,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
 
       case 'search_events_by_location': {
-        result = await kopisService.searchEventsByLocation(args);
+        if (!args) {
+          throw new Error('Arguments are required for search_events_by_location');
+        }
+        result = await kopisService.searchEventsByLocation(args as any);
         const markdown = kopisService.formatEventsMarkdown(result);
         return {
           content: [
@@ -225,7 +214,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
 
       case 'filter_free_events': {
-        result = await kopisService.filterFreeEvents(args);
+        if (!args) {
+          throw new Error('Arguments are required for filter_free_events');
+        }
+        result = await kopisService.filterFreeEvents(args as any);
         const markdown = kopisService.formatFreeEventsMarkdown(result);
         return {
           content: [
@@ -238,6 +230,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
 
       case 'get_event_detail': {
+        if (!args || !args.eventId) {
+          throw new Error('eventId is required for get_event_detail');
+        }
         result = await kopisService.getEventDetail(args.eventId as string);
         const markdown = kopisService.formatEventDetailMarkdown(result);
         return {
@@ -251,7 +246,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       }
 
       case 'get_trending_performances': {
-        result = await kopisService.getTrendingPerformances(args);
+        result = await kopisService.getTrendingPerformances((args || {}) as any);
         const markdown = kopisService.formatTrendingMarkdown(result);
         return {
           content: [
@@ -297,7 +292,7 @@ const httpServer = app.listen(PORT, () => {
   console.log(`[Transport] Streamable HTTP (Stateless)`);
   console.log(`[Endpoint] POST http://localhost:${PORT}/mcp`);
   console.log(`[Health] GET http://localhost:${PORT}/health`);
-  console.log(`[Auth] Supports X-Kopis-Api-Key header or Authorization Bearer token`);
+  console.log(`[Auth] Using KOPIS_API_KEY from environment variables`);
 });
 
 // Graceful shutdown
