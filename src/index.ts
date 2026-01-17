@@ -277,9 +277,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Streamable HTTP endpoint
 app.all('/mcp', async (req: Request, res: Response) => {
-  const transport = new StreamableHTTPServerTransport({
-    endpoint: '/mcp',
-  });
+  const transport = new StreamableHTTPServerTransport();
 
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
