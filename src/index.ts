@@ -9,6 +9,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { KopisService } from './services/kopis.service.js';
 import { config } from './config/index.js';
+import { GENRE_EXAMPLES, SIDO_EXAMPLES, GUGUN_EXAMPLES } from './constants/kopis-codes.js';
 
 const app = express();
 
@@ -62,7 +63,7 @@ const tools: Tool[] = [
       properties: {
         genreCode: {
           type: 'string',
-          description: '장르 코드 (예: AAAA-연극, GGGA-뮤지컬)',
+          description: `장르 코드. 사용 가능한 코드: ${GENRE_EXAMPLES}`,
         },
         startDate: {
           type: 'string',
@@ -76,11 +77,11 @@ const tools: Tool[] = [
         },
         sidoCode: {
           type: 'string',
-          description: '시도 코드 (예: 11-서울, 41-경기) [선택]',
+          description: `시도 코드 [선택]. 예시: ${SIDO_EXAMPLES}`,
         },
         gugunCode: {
           type: 'string',
-          description: '구군 코드 (예: 1111-강남구) [선택]',
+          description: `구군 코드 4자리 [선택]. 예시: ${GUGUN_EXAMPLES}. 강남구는 1168, 종로구는 1111입니다.`,
         },
         limit: {
           type: 'number',
@@ -101,7 +102,7 @@ const tools: Tool[] = [
       properties: {
         genreCode: {
           type: 'string',
-          description: '장르 코드',
+          description: `장르 코드. 사용 가능한 코드: ${GENRE_EXAMPLES}`,
         },
         startDate: {
           type: 'string',
@@ -113,7 +114,7 @@ const tools: Tool[] = [
         },
         sidoCode: {
           type: 'string',
-          description: '시도 코드 [선택]',
+          description: `시도 코드 [선택]. 예시: ${SIDO_EXAMPLES}`,
         },
         limit: {
           type: 'number',
@@ -148,7 +149,7 @@ const tools: Tool[] = [
       properties: {
         genreCode: {
           type: 'string',
-          description: '장르 코드 [선택 - 전체 조회 시 생략]',
+          description: `장르 코드 [선택 - 전체 조회 시 생략]. 사용 가능한 코드: ${GENRE_EXAMPLES}`,
         },
         limit: {
           type: 'number',
@@ -263,11 +264,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    // API 키 마스킹
+    const maskedMessage = errorMessage.replace(
+      /[a-f0-9]{32,}/gi,
+      (match) => `${match.substring(0, 4)}****${match.substring(match.length - 4)}`
+    );
+
     return {
       content: [
         {
           type: 'text',
-          text: `❌ **오류 발생**\n\n${errorMessage}`,
+          text: `❌ **오류 발생**\n\n${maskedMessage}`,
         },
       ],
       isError: true,

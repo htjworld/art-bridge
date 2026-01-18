@@ -1,5 +1,6 @@
 import axios from "axios";
 import { XMLParser } from "fast-xml-parser";
+import { GENRE_CODES, SIDO_CODES, GUGUN_CODES } from "../constants/kopis-codes.js";
 
 interface SearchParams {
   genreCode: string;
@@ -29,7 +30,8 @@ interface TrendingResult {
   message: string;
   scoreInfo: string;
 }
-const MAX_RESPONSE_SIZE = 24000; // 24KB limit (leaving buffer for markdown formatting)
+
+const MAX_RESPONSE_SIZE = 24000;
 
 export class KopisService {
   private readonly baseUrl = "http://www.kopis.or.kr/openApi/restful";
@@ -41,17 +43,10 @@ export class KopisService {
   constructor(private apiKey: string) {}
 
   getGenreList() {
-    return [
-      { code: "AAAA", name: "연극" },
-      { code: "BBBC", name: "무용(서양/한국무용)" },
-      { code: "BBBE", name: "대중무용" },
-      { code: "CCCA", name: "서양음악(클래식)" },
-      { code: "CCCC", name: "한국음악(국악)" },
-      { code: "CCCD", name: "대중음악" },
-      { code: "EEEA", name: "복합" },
-      { code: "EEEB", name: "서커스/마술" },
-      { code: "GGGA", name: "뮤지컬" },
-    ];
+    return Object.entries(GENRE_CODES).map(([code, name]) => ({
+      code,
+      name,
+    }));
   }
 
   formatGenreListMarkdown(genres: any[]): string {
@@ -108,7 +103,6 @@ export class KopisService {
       markdown += `- 🔗 **공연ID**: \`${event.mt20id}\` (상세정보 조회 시 사용)\n`;
       markdown += `\n---\n\n`;
 
-      // Check size and truncate if needed
       if (markdown.length > MAX_RESPONSE_SIZE * 0.8) {
         markdown += `\n> ⚠️ 결과가 너무 많아 ${
           index + 1
@@ -297,7 +291,7 @@ export class KopisService {
     }
 
     return this.truncateIfNeeded(markdown);
-    }
+  }
 
   async searchEventsByLocation(params: SearchParams) {
     const {
@@ -309,7 +303,6 @@ export class KopisService {
       limit = 20,
     } = params;
 
-    // Validate limit
     const validLimit = Math.min(Math.max(limit, 1), 50);
 
     // Level 1: 구/군 단위 검색 (4자리 코드)
@@ -318,7 +311,7 @@ export class KopisService {
         genreCode,
         startDate,
         endDate,
-        signguCode: gugunCode, // 4자리 구군 코드 그대로 사용
+        signguCode: gugunCode,
         limit: validLimit,
       });
       if (results.length > 0) {
@@ -336,7 +329,7 @@ export class KopisService {
         genreCode,
         startDate,
         endDate,
-        signguCode: sidoCode, // 2자리 시도 코드
+        signguCode: sidoCode,
         limit: validLimit,
       });
       if (results.length > 0) {
@@ -365,10 +358,8 @@ export class KopisService {
   async filterFreeEvents(params: FreeEventsParams) {
     const { genreCode, sidoCode, limit = 20 } = params;
 
-    // Validate limit
     const validLimit = Math.min(Math.max(limit, 1), 50);
 
-    // Always use today + 30 days
     const today = new Date();
     const endDate = new Date(today);
     endDate.setDate(today.getDate() + 30);
@@ -376,16 +367,14 @@ export class KopisService {
     const startDate = this.formatDate(today);
     const endDateStr = this.formatDate(endDate);
 
-    // Fetch all events
     const events = await this.fetchEvents({
       genreCode,
       startDate,
       endDate: endDateStr,
       signguCode: sidoCode,
-      limit: 100, // Fetch more to filter
+      limit: 100,
     });
 
-    // Separate free and paid events
     const freeEvents = events.filter(
       (e: any) =>
         e.pcseguidance?.toLowerCase().includes("무료") ||
@@ -401,7 +390,6 @@ export class KopisService {
         return priceA - priceB;
       });
 
-    // Smart fallback logic
     let result = [];
     let message = "";
 
@@ -447,28 +435,23 @@ export class KopisService {
     const validLimit = Math.min(Math.max(limit, 1), 50);
 
     try {
-      // 최근 30일간의 공연 데이터 조회
       const today = new Date();
       const startDate = new Date(today);
       startDate.setDate(today.getDate() - 30);
 
-      // API 요청 URL 생성 (cpage 필수!)
       const queryParams = new URLSearchParams({
         service: this.apiKey,
         stdate: this.formatDate(startDate),
         eddate: this.formatDate(today),
         cpage: "1",
-        rows: "100", // 많이 가져와서 필터링
+        rows: "100",
       });
 
-      // 장르 코드가 있으면 추가
       if (genreCode) {
         queryParams.append("shcate", genreCode);
       }
 
       const url = `${this.baseUrl}/pblprfr?${queryParams.toString()}`;
-
-
       const response = await axios.get(url);
       const parsed = this.parser.parse(response.data);
 
@@ -477,28 +460,21 @@ export class KopisService {
         events = events ? [events] : [];
       }
 
-
-      // 공연중인 것만 필터링
       const activeEvents = events.filter(
         (e: any) => e.prfstate === "공연중" || e.prfstate === "공연예정"
       );
 
-
-      // 인기도 점수 계산
       const rankedEvents = activeEvents.map((event: any) => {
-        let score = 50; // 기본 점수
+        let score = 50;
 
-        // 오픈런 = 인기 많다는 증거 (+30점)
         if (event.openrun === "Y") {
           score += 30;
         }
 
-        // 공연중 (+10점)
         if (event.prfstate === "공연중") {
           score += 10;
         }
 
-        // 종료 임박 (+20점) - 14일 이내
         const endDateStr = event.prfpdto?.replace(/\./g, "");
         const daysUntilEnd = endDateStr
           ? this.calculateDaysUntil(endDateStr)
@@ -508,12 +484,10 @@ export class KopisService {
           score += 20;
         }
 
-        // 7일 이내 마감 임박 추가 보너스 (+10점)
         if (daysUntilEnd <= 7 && daysUntilEnd > 0) {
           score += 10;
         }
 
-        // 이모지 인디케이터
         const popularityEmoji = score >= 80 ? "⭐" : "";
         const urgencyEmoji = daysUntilEnd <= 7 ? "🔥" : "";
 
@@ -522,24 +496,20 @@ export class KopisService {
           popularityScore: score,
           daysUntilEnd,
           indicators: `${popularityEmoji}${urgencyEmoji}`.trim() || "-",
-          rank: 0, // 나중에 할당
+          rank: 0,
         };
       });
 
-      // 인기도 순으로 정렬
       rankedEvents.sort(
         (a: any, b: any) => b.popularityScore - a.popularityScore
       );
 
-      // 순위 부여
       rankedEvents.forEach((event: any, index: number) => {
         event.rank = index + 1;
       });
 
-      // 결과 제한
       const result = rankedEvents.slice(0, validLimit);
 
-      // 장르별 결과 없으면 전체 장르로 재시도
       if (result.length === 0 && genreCode) {
         return await this.getTrendingPerformances({ limit });
       }
@@ -564,78 +534,20 @@ export class KopisService {
     }
   }
 
-  // 헬퍼 함수: 장르 이름 반환
   private getGenreName(code: string): string {
-    const genres: { [key: string]: string } = {
-      AAAA: "연극",
-      BBBC: "무용(서양/한국무용)",
-      BBBE: "대중무용",
-      CCCA: "서양음악(클래식)",
-      CCCC: "한국음악(국악)",
-      CCCD: "대중음악",
-      EEEA: "복합",
-      EEEB: "서커스/마술",
-      GGGA: "뮤지컬",
-    };
-    return genres[code] || code;
+    return GENRE_CODES[code as keyof typeof GENRE_CODES] || code;
   }
 
-  // 헬퍼 함수: 지역 이름 반환
   private getAreaName(code: string): string {
-    const areas: { [key: string]: string } = {
-      // 시도 코드 (2자리)
-      "11": "서울특별시",
-      "26": "부산광역시",
-      "27": "대구광역시",
-      "28": "인천광역시",
-      "29": "광주광역시",
-      "30": "대전광역시",
-      "31": "울산광역시",
-      "36": "세종특별자치시",
-      "41": "경기도",
-      "51": "강원특별자치도",
-      "43": "충청북도",
-      "44": "충청남도",
-      "45": "전라북도",
-      "46": "전라남도",
-      "47": "경상북도",
-      "48": "경상남도",
-      "50": "제주특별자치도",
-      
-      // 서울 구군 코드 (4자리)
-      "1111": "서울 종로구",
-      "1114": "서울 중구",
-      "1117": "서울 용산구",
-      "1120": "서울 성동구",
-      "1121": "서울 광진구",
-      "1123": "서울 동대문구",
-      "1126": "서울 중랑구",
-      "1129": "서울 성북구",
-      "1130": "서울 강북구",
-      "1132": "서울 도봉구",
-      "1135": "서울 노원구",
-      "1138": "서울 은평구",
-      "1141": "서울 서대문구",
-      "1144": "서울 마포구",
-      "1147": "서울 양천구",
-      "1150": "서울 강서구",
-      "1153": "서울 구로구",
-      "1154": "서울 금천구",
-      "1156": "서울 영등포구",
-      "1159": "서울 동작구",
-      "1162": "서울 관악구",
-      "1165": "서울 서초구",
-      "1168": "서울 강남구",
-      "1171": "서울 송파구",
-      "1174": "서울 강동구",
-    };
-    return areas[code] || code;
+    return (
+      GUGUN_CODES[code as keyof typeof GUGUN_CODES] ||
+      SIDO_CODES[code as keyof typeof SIDO_CODES] ||
+      code
+    );
   }
 
-  // 헬퍼 함수: 종료까지 남은 일수 계산
   private calculateDaysUntil(endDateStr: string): number {
     try {
-      // YYYYMMDD 형식
       const year = parseInt(endDateStr.substring(0, 4));
       const month = parseInt(endDateStr.substring(4, 6)) - 1;
       const day = parseInt(endDateStr.substring(6, 8));
@@ -643,7 +555,6 @@ export class KopisService {
       const endDate = new Date(year, month, day);
       const today = new Date();
 
-      // 시간 부분 제거 (날짜만 비교)
       today.setHours(0, 0, 0, 0);
       endDate.setHours(0, 0, 0, 0);
 
