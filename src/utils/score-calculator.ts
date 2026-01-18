@@ -64,7 +64,7 @@ export class ScoreCalculator {
   /**
    * 가격 점수 (0-100)
    */
-  private calculatePriceScore(event: any, targetIsFree?: boolean): number {
+  private calculatePriceScore(event: any, _targetIsFree?: boolean): number {
     const priceStr = event.pcseguidance || '';
     
     // 무료 감지

@@ -58,7 +58,7 @@ export class QueryAnalyzer {
   /**
    * 우선순위 결정 로직
    */
-  private determinePriorities(toolName: string, keywords: any): PriorityWeights {
+  private determinePriorities(_toolName: string, keywords: any): PriorityWeights {
     // Case 1: 무료 공연 검색
     if (keywords.isFree) {
       return {

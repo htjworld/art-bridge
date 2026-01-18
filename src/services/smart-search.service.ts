@@ -67,7 +67,7 @@ export class SmartSearchService {
   /**
    * Level 2: 우선순위 낮은 조건 1개 완화
    */
-  private async executeLevel2(toolName: string, args: any, analysis: any) {
+  private async executeLevel2(toolName: string, args: any, _analysis: any) {
     const relaxed: string[] = [];
 
     if (toolName === 'filter_free_events') {
@@ -136,7 +136,7 @@ export class SmartSearchService {
   /**
    * Level 3: 우선순위 낮은 조건 2개 완화
    */
-  private async executeLevel3(toolName: string, args: any, analysis: any) {
+  private async executeLevel3(toolName: string, args: any, _analysis: any) {
     const relaxed: string[] = [];
 
     if (toolName === 'filter_free_events') {
@@ -389,7 +389,7 @@ export class SmartSearchService {
   /**
    * 메시지 생성
    */
-  private generateMessage(level: number, relaxed: string[], count: number, minCount: number): string {
+  private generateMessage(level: number, relaxed: string[], count: number, _minCount: number): string {
     if (level === 1) {
       return `✅ 요청 조건에 완벽히 맞는 공연 ${count}개를 찾았습니다!`;
     }
