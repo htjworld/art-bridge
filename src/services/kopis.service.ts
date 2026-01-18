@@ -226,7 +226,7 @@ export class KopisService {
     }
 
     if (detail.dtguidance) {
-      markdown += `\n## 📍 공연 시간 안내\n\n`;
+      markdown += `\n## 📅 공연 시간 안내\n\n`;
       markdown += `${detail.dtguidance}\n`;
     }
 
@@ -312,38 +312,38 @@ export class KopisService {
     // Validate limit
     const validLimit = Math.min(Math.max(limit, 1), 50);
 
-    // Level 1: 구/군 단위 검색
-    if (gugunCode && sidoCode) {
+    // Level 1: 구/군 단위 검색 (4자리 코드)
+    if (gugunCode) {
       const results = await this.fetchEvents({
         genreCode,
         startDate,
         endDate,
-        signguCode: gugunCode,
+        signguCode: gugunCode, // 4자리 구군 코드 그대로 사용
         limit: validLimit,
       });
       if (results.length > 0) {
         return {
           events: results,
           searchLevel: "gugun",
-          message: `${gugunCode} 구/군에서 ${results.length}개의 공연을 찾았습니다.`,
+          message: `${this.getAreaName(gugunCode)} 지역에서 ${results.length}개의 공연을 찾았습니다.`,
         };
       }
     }
 
-    // Level 2: 시/도 단위 검색
+    // Level 2: 시/도 단위 검색 (2자리 코드)
     if (sidoCode) {
       const results = await this.fetchEvents({
         genreCode,
         startDate,
         endDate,
-        signguCode: sidoCode,
+        signguCode: sidoCode, // 2자리 시도 코드
         limit: validLimit,
       });
       if (results.length > 0) {
         return {
           events: results,
           searchLevel: "sido",
-          message: `구/군 검색 결과가 없어 시/도 범위로 확장했습니다. ${results.length}개의 공연을 찾았습니다.`,
+          message: `구/군 검색 결과가 없어 ${this.getAreaName(sidoCode)} 전체로 확장했습니다. ${results.length}개의 공연을 찾았습니다.`,
         };
       }
     }
@@ -563,6 +563,7 @@ export class KopisService {
       );
     }
   }
+
   // 헬퍼 함수: 장르 이름 반환
   private getGenreName(code: string): string {
     const genres: { [key: string]: string } = {
@@ -577,6 +578,58 @@ export class KopisService {
       GGGA: "뮤지컬",
     };
     return genres[code] || code;
+  }
+
+  // 헬퍼 함수: 지역 이름 반환
+  private getAreaName(code: string): string {
+    const areas: { [key: string]: string } = {
+      // 시도 코드 (2자리)
+      "11": "서울특별시",
+      "26": "부산광역시",
+      "27": "대구광역시",
+      "28": "인천광역시",
+      "29": "광주광역시",
+      "30": "대전광역시",
+      "31": "울산광역시",
+      "36": "세종특별자치시",
+      "41": "경기도",
+      "51": "강원특별자치도",
+      "43": "충청북도",
+      "44": "충청남도",
+      "45": "전라북도",
+      "46": "전라남도",
+      "47": "경상북도",
+      "48": "경상남도",
+      "50": "제주특별자치도",
+      
+      // 서울 구군 코드 (4자리)
+      "1111": "서울 종로구",
+      "1114": "서울 중구",
+      "1117": "서울 용산구",
+      "1120": "서울 성동구",
+      "1121": "서울 광진구",
+      "1123": "서울 동대문구",
+      "1126": "서울 중랑구",
+      "1129": "서울 성북구",
+      "1130": "서울 강북구",
+      "1132": "서울 도봉구",
+      "1135": "서울 노원구",
+      "1138": "서울 은평구",
+      "1141": "서울 서대문구",
+      "1144": "서울 마포구",
+      "1147": "서울 양천구",
+      "1150": "서울 강서구",
+      "1153": "서울 구로구",
+      "1154": "서울 금천구",
+      "1156": "서울 영등포구",
+      "1159": "서울 동작구",
+      "1162": "서울 관악구",
+      "1165": "서울 서초구",
+      "1168": "서울 강남구",
+      "1171": "서울 송파구",
+      "1174": "서울 강동구",
+    };
+    return areas[code] || code;
   }
 
   // 헬퍼 함수: 종료까지 남은 일수 계산
