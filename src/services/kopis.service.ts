@@ -1,6 +1,6 @@
 import axios from "axios";
 import { XMLParser } from "fast-xml-parser";
-import { GENRE_CODES, SIDO_CODES, GUGUN_CODES } from "../constants/kopis-codes.js";
+import { GENRE_CODES, getGenreName, getAreaName } from "../constants/kopis-codes.js";
 
 interface SearchParams {
   genreCode: string;
@@ -43,6 +43,8 @@ export class KopisService {
   constructor(private apiKey: string) {}
 
   getGenreList() {
+    // GENRE_CODES는 이미 import되어 있지 않으므로, 여기서는 수정 불필요
+    // 실제 import 구조에 따라 조정 필요
     return Object.entries(GENRE_CODES).map(([code, name]) => ({
       code,
       name,
@@ -318,7 +320,8 @@ export class KopisService {
         return {
           events: results,
           searchLevel: "gugun",
-          message: `${this.getAreaName(gugunCode)} 지역에서 ${results.length}개의 공연을 찾았습니다.`,
+          // ✅ 유틸리티 함수 사용
+          message: `${getAreaName(gugunCode)} 지역에서 ${results.length}개의 공연을 찾았습니다.`,
         };
       }
     }
@@ -336,7 +339,8 @@ export class KopisService {
         return {
           events: results,
           searchLevel: "sido",
-          message: `구/군 검색 결과가 없어 ${this.getAreaName(sidoCode)} 전체로 확장했습니다. ${results.length}개의 공연을 찾았습니다.`,
+          // ✅ 유틸리티 함수 사용
+          message: `구/군 검색 결과가 없어 ${getAreaName(sidoCode)} 전체로 확장했습니다. ${results.length}개의 공연을 찾았습니다.`,
         };
       }
     }
@@ -517,8 +521,9 @@ export class KopisService {
       return {
         performances: result,
         count: result.length,
+        // ✅ 유틸리티 함수 사용
         message: genreCode
-          ? `${this.getGenreName(genreCode)} 장르의 인기 공연 ${
+          ? `${getGenreName(genreCode)} 장르의 인기 공연 ${
               result.length
             }개를 찾았습니다.`
           : `전체 장르의 인기 공연 ${result.length}개를 찾았습니다.`,
@@ -532,18 +537,6 @@ export class KopisService {
         }`
       );
     }
-  }
-
-  private getGenreName(code: string): string {
-    return GENRE_CODES[code as keyof typeof GENRE_CODES] || code;
-  }
-
-  private getAreaName(code: string): string {
-    return (
-      GUGUN_CODES[code as keyof typeof GUGUN_CODES] ||
-      SIDO_CODES[code as keyof typeof SIDO_CODES] ||
-      code
-    );
   }
 
   private calculateDaysUntil(endDateStr: string): number {

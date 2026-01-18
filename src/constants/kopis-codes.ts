@@ -313,7 +313,85 @@ export const GUGUN_CODES = {
   "5013": "제주 서귀포시",
 } as const;
 
-// AI가 참고할 수 있도록 주요 구군 예시 생성
+/**
+ * 장르 코드 → 장르명 변환
+ */
+export function getGenreName(code: string): string {
+  return GENRE_CODES[code as keyof typeof GENRE_CODES] || code;
+}
+
+/**
+ * 시/도 코드 → 시/도명 변환 (짧은 버전)
+ * 예: "11" → "서울"
+ */
+export function getSidoNameShort(code: string): string {
+  const fullName = SIDO_CODES[code as keyof typeof SIDO_CODES];
+  if (!fullName) return code;
+  
+  // "서울특별시" → "서울"
+  return fullName
+    .replace('특별시', '')
+    .replace('광역시', '')
+    .replace('특별자치시', '')
+    .replace('특별자치도', '')
+    .replace('도', '');
+}
+
+/**
+ * 시/도 코드 → 시/도명 변환 (전체 이름)
+ * 예: "11" → "서울특별시"
+ */
+export function getSidoNameFull(code: string): string {
+  return SIDO_CODES[code as keyof typeof SIDO_CODES] || code;
+}
+
+/**
+ * 구/군 코드 → 구/군명 변환 (짧은 버전)
+ * 예: "1168" → "강남" (구 제외)
+ */
+export function getGugunNameShort(code: string): string {
+  const fullName = GUGUN_CODES[code as keyof typeof GUGUN_CODES];
+  if (!fullName) return code;
+  
+  // "서울 강남구" → "강남"
+  return fullName.split(' ').pop()?.replace('구', '').replace('군', '') || code;
+}
+
+/**
+ * 구/군 코드 → 구/군명 변환 (전체 이름)
+ * 예: "1168" → "서울 강남구"
+ */
+export function getGugunNameFull(code: string): string {
+  return GUGUN_CODES[code as keyof typeof GUGUN_CODES] || code;
+}
+
+/**
+ * 지역 코드 → 지역명 변환 (시/도 또는 구/군 자동 판별)
+ * - 2자리: 시/도 코드
+ * - 4자리: 구/군 코드
+ */
+export function getAreaName(code: string, short: boolean = true): string {
+  if (code.length === 4) {
+    return short ? getGugunNameShort(code) : getGugunNameFull(code);
+  } else if (code.length === 2) {
+    return short ? getSidoNameShort(code) : getSidoNameFull(code);
+  }
+  return code;
+}
+
+/**
+ * 4자리 구군 코드 → 2자리 시도 코드 추출
+ * 예: "1168" → "11"
+ */
+export function extractSidoCode(code?: string, defaultSido: string = '11'): string {
+  if (!code) return defaultSido;
+  return code.length === 4 ? code.substring(0, 2) : code;
+}
+
+// =============================================================================
+// AI용 예시 데이터
+// =============================================================================
+
 export const GUGUN_EXAMPLES = [
   "1168-강남구",
   "1111-종로구",
@@ -326,12 +404,10 @@ export const GUGUN_EXAMPLES = [
   "2726-수성구",
 ].join(", ");
 
-// AI가 참고할 수 있도록 장르 예시 생성
 export const GENRE_EXAMPLES = Object.entries(GENRE_CODES)
   .map(([code, name]) => `${code}-${name}`)
   .join(", ");
 
-// 시도 코드 예시
 export const SIDO_EXAMPLES = [
   "11-서울",
   "41-경기",

@@ -8,6 +8,7 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { KopisService } from './services/kopis.service.js';
+import { SmartSearchService } from './services/smart-search.service.js';
 import { config } from './config/index.js';
 import { GENRE_EXAMPLES, SIDO_EXAMPLES, GUGUN_EXAMPLES } from './constants/kopis-codes.js';
 
@@ -24,7 +25,7 @@ app.use(express.json());
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'healthy',
-    serverType: 'stateless',
+    serverType: 'stateless-smart-search',
     transport: 'streamableHttp',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
@@ -35,7 +36,7 @@ app.get('/health', (_req: Request, res: Response) => {
 const server = new Server(
   {
     name: 'art-bridge-mcp-server',
-    version: '1.0.0',
+    version: '2.0.0', // 스마트 검색 버전
   },
   {
     capabilities: {
@@ -57,7 +58,17 @@ const tools: Tool[] = [
   },
   {
     name: 'search_events_by_location',
-    description: '특정 지역과 기간의 공연을 검색합니다. 검색 결과가 없으면 자동으로 구/군 → 시/도 → 전국 순으로 범위를 확장합니다.',
+    description: `🎯 스마트 검색 지원! 특정 지역과 기간의 공연을 검색합니다. 
+    
+4단계 지능형 완화 전략:
+• Level 1: 요청 조건 100% 일치
+• Level 2: 장르 OR 위치 중 하나만 완화
+• Level 3: 장르 + 위치 동시 완화
+• Level 4: 기간까지 확장 (이번달 전체)
+
+우선순위 자동 분석:
+• "다음주" 등 특정 기간 → 날짜 우선
+• 장르/위치는 유사한 것으로 점진적 확장`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -85,8 +96,8 @@ const tools: Tool[] = [
         },
         limit: {
           type: 'number',
-          description: '결과 개수 (기본: 20, 최대: 50)',
-          default: 20,
+          description: '최소 결과 개수 (기본: 3, 최대: 50). 스마트 검색이 이 개수를 달성하려고 자동 완화합니다.',
+          default: 3,
           minimum: 1,
           maximum: 50,
         },
@@ -96,7 +107,15 @@ const tools: Tool[] = [
   },
   {
     name: 'filter_free_events',
-    description: '무료 공연을 우선 검색합니다 (항상 오늘부터 30일 이내). 무료 공연이 5개 미만이면 저렴한 유료 공연으로 자동 보충합니다. ⚠️ startDate/endDate는 무시되며 항상 오늘~30일 범위로 고정됩니다.',
+    description: `💰 가격 우선 스마트 검색! 무료 공연을 최우선으로 검색합니다 (항상 오늘부터 30일 이내).
+    
+우선순위:
+1. 가격 (40%) - 무료 > 저렴한 순
+2. 날짜 (30%) - 오늘~30일 고정
+3. 장르 (20%)
+4. 위치 (10%)
+
+⚠️ startDate/endDate는 무시되며 항상 오늘~30일 범위로 고정됩니다.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -143,7 +162,15 @@ const tools: Tool[] = [
   },
   {
     name: 'get_trending_performances',
-    description: 'KOPIS 박스오피스 인기 순위 기반으로 공연을 추천합니다. 인기도(0-100) 기준 정렬, 14일 이내 종료 공연에 가산점 부여. 해당 장르에 결과가 없으면 전체 장르로 자동 확장합니다.',
+    description: `🔥 인기도 우선 스마트 검색! KOPIS 박스오피스 기반 인기 공연을 추천합니다.
+    
+우선순위:
+1. 인기도 (40%) - 오픈런(+30), 공연중(+10), 14일내 종료(+20)
+2. 개수 (30%) - 요청 개수 달성
+3. 장르 (20%)
+4. 날짜 (10%)
+
+해당 장르에 결과가 없으면 전체 장르로 자동 확장합니다.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -174,13 +201,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
-    // Get API key from environment (Railway will provide via Variables)
     const apiKey = config.kopisApiKey;
     if (!apiKey) {
       throw new Error('KOPIS API key is required. Please set KOPIS_API_KEY environment variable.');
     }
     
     const kopisService = new KopisService(apiKey);
+    const smartSearch = new SmartSearchService(kopisService);
 
     let result: any;
 
@@ -202,8 +229,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!args) {
           throw new Error('Arguments are required for search_events_by_location');
         }
-        result = await kopisService.searchEventsByLocation(args as any);
-        const markdown = kopisService.formatEventsMarkdown(result);
+        
+        // 🎯 스마트 검색 사용
+        result = await smartSearch.search(name, args);
+        const markdown = kopisService.formatEventsMarkdown({
+          events: result.events,
+          message: result.message,
+        });
+        
         return {
           content: [
             {
@@ -218,8 +251,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!args) {
           throw new Error('Arguments are required for filter_free_events');
         }
-        result = await kopisService.filterFreeEvents(args as any);
-        const markdown = kopisService.formatFreeEventsMarkdown(result);
+        
+        // 💰 가격 우선 스마트 검색
+        result = await smartSearch.search(name, args);
+        
+        // 무료/유료 분리
+        const freeEvents = result.events.filter((e: any) =>
+          e.pcseguidance?.toLowerCase().includes('무료') ||
+          e.pcseguidance === '0' ||
+          e.pcseguidance === '0원'
+        );
+        
+        const markdown = kopisService.formatFreeEventsMarkdown({
+          events: result.events,
+          freeCount: freeEvents.length,
+          paidCount: result.events.length - freeEvents.length,
+          message: result.message,
+          dateRange: '오늘 ~ 30일 후',
+        });
+        
         return {
           content: [
             {
@@ -247,8 +297,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'get_trending_performances': {
-        result = await kopisService.getTrendingPerformances((args || {}) as any);
-        const markdown = kopisService.formatTrendingMarkdown(result);
+        // 인기도 우선 스마트 검색
+        result = await smartSearch.search(name, args || {});
+        const markdown = kopisService.formatTrendingMarkdown({
+          performances: result.events,
+          count: result.events.length,
+          message: result.message,
+          scoreInfo: '스마트 검색으로 최적화된 결과입니다.',
+        });
         return {
           content: [
             {
@@ -264,7 +320,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    // API 키 마스킹
     const maskedMessage = errorMessage.replace(
       /[a-f0-9]{32,}/gi,
       (match) => `${match.substring(0, 4)}****${match.substring(match.length - 4)}`
@@ -293,11 +348,12 @@ app.all('/mcp', async (req: Request, res: Response) => {
 // Start server
 const PORT = config.port;
 const httpServer = app.listen(PORT, () => {
-  console.log(`[Art-Bridge MCP Server] Running on port ${PORT}`);
+  console.log(`[Art-Bridge MCP Server v2.0] Running on port ${PORT}`);
+  console.log(`[Feature] 🎯 Smart Search with 4-Level Relaxation Strategy`);
+  console.log(`[Feature] 📊 Priority-based Score Calculation`);
   console.log(`[Transport] Streamable HTTP (Stateless)`);
   console.log(`[Endpoint] POST http://localhost:${PORT}/mcp`);
   console.log(`[Health] GET http://localhost:${PORT}/health`);
-  console.log(`[Auth] Using KOPIS_API_KEY from environment variables`);
 });
 
 // Graceful shutdown
