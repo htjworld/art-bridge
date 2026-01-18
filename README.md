@@ -1,6 +1,6 @@
 # Art-Bridge MCP Server
 
-한국 공연예술 정보 제공 MCP 서버입니다. KOPIS(공연예술통합전산망) API를 활용하여 다양한 공연 정보를 제공합니다.
+한국 공연예술 정보 제공 MCP 서버. KOPIS(공연예술통합전산망) API 기반으로 공연 검색, 추천, 상세 정보를 제공합니다.
 
 ## ✨ 주요 특징
 
@@ -9,7 +9,7 @@
 - **🔑 헤더 인증 지원**: `X-Kopis-Api-Key` 커스텀 헤더 방식
 - **🚫 Stateless**: 세션 없이 안정적인 서비스
 - **📏 24KB 응답 제한**: PlayMCP 정책 준수
-- **🎯 5개 Tool**: 적정 개수 (3~20개 권장 범위)
+- **🎯 5개 Tool**: 공연 검색에 최적화된 도구 세트
 - **🐳 Production Ready**: Docker, Health check, Graceful shutdown
 
 ## 🚀 빠른 시작
@@ -69,7 +69,7 @@ curl -X POST http://localhost:3000/mcp \
 KOPIS_API_KEY=your_api_key_here
 ```
 
-## 📋 주요 기능 (5개 Tool)
+## 📋 제공 기능 (5개 Tool)
 
 ### 1. 장르 목록 조회 (`get_genre_list`)
 
@@ -90,10 +90,6 @@ KOPIS_API_KEY=your_api_key_here
 
 특정 지역과 기간의 공연을 검색합니다.
 
-**스마트 확장 기능:**
-- 검색 결과가 없으면 자동으로 범위 확장
-- 구/군 → 시/도 → 전국 순으로 확대
-
 **파라미터:**
 ```json
 {
@@ -105,6 +101,10 @@ KOPIS_API_KEY=your_api_key_here
   "limit": 20             // 선택 (최대 50)
 }
 ```
+
+**스마트 확장:**
+- 검색 결과가 부족하면 자동으로 범위 확장
+- 구/군 → 시/도 → 전국 순으로 확대
 
 **응답 형식:** Markdown (포스터 이미지 포함)
 
@@ -138,6 +138,36 @@ KOPIS 박스오피스 순위 기반 추천.
 - ⭐ 인기도 80점 이상 표시
 - 🔥 7일 이내 마감임박 표시
 - 장르별 결과 없으면 전체 장르로 자동 확장
+
+## 🎯 핵심 기능: 스마트 검색 엔진
+
+검색 품질을 보장하기 위해 4단계 지능형 완화 전략을 사용합니다.
+
+### 4단계 완화 전략
+
+검색 결과가 요청한 최소 개수에 미달할 경우, 자동으로 조건을 완화하여 최적의 결과를 제공합니다.
+
+- **Level 1**: 요청 조건 100% 일치
+- **Level 2**: 우선순위 낮은 조건 1개 완화 (장르 OR 위치)
+- **Level 3**: 우선순위 낮은 조건 2개 완화 (장르 + 위치)
+- **Level 4**: 최대 범위 확장 (시/도 전체 + 모든 장르 + 한달)
+
+### 우선순위 기반 점수제
+
+도구별로 다른 우선순위 전략을 적용하여 사용자 의도에 맞는 결과를 제공합니다.
+
+| 도구 | 1순위 (40%) | 2순위 (30%) | 3순위 (20%) | 4순위 (10%) |
+|------|-------------|-------------|-------------|-------------|
+| 무료 공연 검색 | 가격 | 날짜 | 장르 | 위치 |
+| 인기 공연 추천 | 인기도 | 개수 | 장르 | 날짜 |
+| 지역별 검색 | 날짜 | 위치 | 장르 | 개수 |
+
+### 성능 최적화
+
+- **중복 제거**: `mt20id` 기반 deduplication
+- **유사 장르 자동 확장**: 연극↔뮤지컬, 클래식↔국악 등
+- **지역 계층 완화**: 구/군 → 시/도 → 전국
+- **응답 크기 제한**: 24KB 자동 truncate
 
 ## 🔧 API 엔드포인트
 
@@ -249,6 +279,96 @@ docker logs -f art-bridge-mcp
 curl http://localhost:3000/health
 ```
 
+## 🏗️ 아키텍처
+
+```
+src/
+├── index.ts                    # Express 서버 & MCP 핸들러
+├── config/
+│   └── index.ts               # 환경 변수 설정
+├── constants/
+│   └── kopis-codes.ts         # KOPIS 코드 상수 & 유틸리티
+├── services/
+│   ├── kopis.service.ts       # KOPIS API 통신
+│   └── smart-search.service.ts # 4단계 완화 전략 엔진
+├── utils/
+│   ├── query-analyzer.ts      # 쿼리 분석 & 우선순위 결정
+│   └── score-calculator.ts    # 점수 계산 & 정렬
+└── types/
+    └── search.types.ts        # TypeScript 타입 정의
+```
+
+### 핵심 로직
+
+#### 1. 쿼리 분석기 (QueryAnalyzer)
+도구 이름을 기반으로 검색 우선순위를 자동 결정합니다.
+
+```typescript
+// 특정 날짜 범위 검색 감지 (7일 이하)
+if (hasDateKeyword) {
+  priorities = { date: 40%, count: 30%, genre: 20%, location: 10% }
+}
+```
+
+#### 2. 점수 계산기 (ScoreCalculator)
+5가지 점수 항목을 우선순위별 가중치로 계산합니다.
+
+```typescript
+totalScore = 
+  (priceScore × weight['price']) +
+  (dateScore × weight['date']) +
+  (genreScore × weight['genre']) +
+  (locationScore × weight['location']) +
+  (popularityScore × weight['popularity'])
+```
+
+#### 3. 스마트 검색 엔진 (SmartSearchService)
+4단계 완화 전략을 순차적으로 실행합니다.
+
+```typescript
+// Level 1 → 2 → 3 → 4 순차 실행
+for (let level = 1; level <= 4; level++) {
+  const result = await executeLevel(level);
+  if (result.length >= minCount) return result;
+}
+```
+
+## 📚 지역 코드 참고
+
+### 시도 코드 (sidoCode) - 2자리
+```
+11: 서울, 26: 부산, 27: 대구, 28: 인천
+41: 경기, 50: 제주
+```
+
+### 구군 코드 (gugunCode) - 4자리 (서울 예시)
+```
+1168: 강남구, 1111: 종로구, 1144: 마포구
+1165: 서초구, 1171: 송파구
+```
+
+전체 코드: `src/constants/kopis-codes.ts` 참조
+
+## 🛠️ 개발 명령어
+
+```bash
+npm run dev         # hot-reload 개발 모드
+npm run build       # TypeScript 컴파일
+npm start           # 프로덕션 실행
+npm run typecheck   # 타입 체크
+npm run lint        # ESLint
+npm run inspector   # MCP Inspector
+```
+
+## 📦 환경 변수
+
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| PORT | 서버 포트 | 3000 |
+| KOPIS_API_KEY | KOPIS API 키 (선택 - 헤더 권장) | - |
+| CORS_ORIGIN | CORS 허용 오리진 | * |
+| NODE_ENV | 환경 | development |
+
 ## 📊 PlayMCP 심사 정책 준수
 
 ### ✅ 기본 심사 정책
@@ -283,66 +403,6 @@ curl http://localhost:3000/health
 - [x] 적절한 대표 이미지 사용 가능
 - [x] Resource/Prompt 미사용 (현재 PlayMCP 미지원)
 
-## 📚 지역 코드 참고
-
-### 시도 코드 (sidoCode)
-- `11`: 서울특별시
-- `26`: 부산광역시
-- `27`: 대구광역시
-- `28`: 인천광역시
-- `41`: 경기도
-- `50`: 제주특별자치도
-
-### 구군 코드 (gugunCode) - 서울 예시
-- `1111`: 강남구
-- `1114`: 강동구
-- `1117`: 강북구
-- `1120`: 강서구
-
-전체 코드는 [KOPIS 공통코드 문서](http://www.kopis.or.kr/por/cs/openapi/openApiList.do) 참조
-
-## 🛠️ 개발 명령어
-
-```bash
-npm run dev         # 개발 모드 (hot-reload)
-npm run build       # TypeScript 빌드
-npm start           # 프로덕션 실행
-npm run typecheck   # 타입 검사
-npm run lint        # ESLint 검사
-npm run inspector   # MCP Inspector 실행
-```
-
-## 📦 환경 변수
-
-| 변수 | 설명 | 기본값 |
-|------|------|--------|
-| `PORT` | 서버 포트 | `3000` |
-| `KOPIS_API_KEY` | KOPIS API 키 (선택 - 헤더 권장) | - |
-| `CORS_ORIGIN` | CORS 허용 오리진 | `*` |
-| `NODE_ENV` | 환경 모드 | `development` |
-
-## 🏗️ 아키텍처
-
-```
-┌─────────────────────────────────────┐
-│      Express HTTP Server            │  ← API Layer
-├─────────────────────────────────────┤
-│   Middleware (CORS, JSON)           │
-│   Header Auth (X-Kopis-Api-Key)     │  ← PlayMCP 인증
-├─────────────────────────────────────┤
-│   Stateless MCP Server Core         │  ← Business Logic
-│   • 5 Tools (적정 개수)             │
-│   • Markdown Formatter              │  ← 읽기 쉬운 응답
-│   • 24KB Response Limiter           │  ← PlayMCP 정책
-├─────────────────────────────────────┤
-│   StreamableHTTP Transport          │  ← MCP Protocol
-├─────────────────────────────────────┤
-│   KOPIS API Service                 │  ← External API
-│   • Smart Fallback Logic            │
-│   • Auto Range Expansion            │
-└─────────────────────────────────────┘
-```
-
 ## 🔒 보안 고려사항
 
 - Production 환경에서는 `CORS_ORIGIN`을 특정 도메인으로 제한하세요
@@ -350,29 +410,35 @@ npm run inspector   # MCP Inspector 실행
 - HTTPS를 사용하여 API 통신을 암호화하세요
 - 인증 실패 시 401 Unauthorized 응답
 
-## 📝 응답 형식 예시
+## 📝 응답 예시
 
-### Markdown 형식 (PlayMCP 권장)
 ```markdown
-# 🎭 공연 검색 결과
+# 🎪 공연 검색 결과
 
-> 서울 강남구에서 5개의 공연을 찾았습니다.
+> ✅ 요청 조건에 완벽히 맞는 공연 3개를 찾았습니다!
 
-**총 5개의 공연**
+**총 3개의 공연**
 
 ---
 
 ## 1. 뮤지컬 위키드
 
-![포스터](https://kopis-poster-url.jpg)
+![포스터](https://poster-url.jpg)
 
-- 📅 **공연기간**: 2026-01-20 ~ 2026-03-15
+- 📅 **공연기간**: 2026.01.20 ~ 2026.03.15
 - 🏛️ **공연장**: 샤롯데씨어터
 - 🎭 **장르**: 뮤지컬
 - 📍 **지역**: 서울 강남구
 - 🟢 **상태**: 공연중
 - 🔗 **공연ID**: `PF123456`
 ```
+
+## 📊 성능 지표
+
+- Build time: ~33초
+- Container 시작: 즉시
+- 평균 응답 시간: <500ms
+- 메모리 사용: ~150MB
 
 ## 📄 라이선스
 
@@ -382,12 +448,13 @@ MIT License
 
 이슈와 풀 리퀘스트는 언제나 환영합니다!
 
-## 📞 문의
+## 📞 링크
 
-- KOPIS API 관련: [KOPIS 고객센터](http://www.kopis.or.kr)
-- MCP 스펙: [MCP Documentation](https://modelcontextprotocol.io)
-- PlayMCP 심사: [PlayMCP 디스코드](https://discord.gg/playmcp)
+- [KOPIS API](http://www.kopis.or.kr/por/cs/openapi/openApiList.do)
+- [MCP Spec](https://modelcontextprotocol.io)
 
 ---
+
+**v2.0.0** - Smart Search Engine with 4-Level Relaxation Strategy
 
 **Made with ❤️ for Korean Performing Arts**
