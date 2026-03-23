@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="./assets/ArtBridge-logo.png" alt="ArtBridge Logo" width="160" />
-  <h1>art-bridge</h1>
+  <h1><img src="./assets/ArtBridge-logo.png" alt="" height="36" /> ArtBridge</h1>
 </div>
 
 > KOPIS 기반 공연 추천 MCP 서버 — 자연어 한 문장으로 실시간 공연 정보 조회
