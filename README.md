@@ -129,7 +129,6 @@ GET  http://localhost:3000/health ← 상태 확인
 |---|---|
 | <img src="./assets/ranking-recommended.png" alt="추천순 1위" width="280" /> | <img src="./assets/ranking-toolcall.png" alt="툴콜순 1위" width="280" /> |
 
-<!-- TODO: ranking-recommended.png, ranking-toolcall.png 실제 캡처 이미지로 교체 필요 -->
 
 ## License
 
