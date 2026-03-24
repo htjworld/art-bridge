@@ -127,7 +127,7 @@ GET  http://localhost:3000/health ← 상태 확인
 
 | 추천순 전체 1위 | 툴콜순 전체 1위 |
 |---|---|
-| <img src="./assets/ranking-recommended.png" alt="추천순 1위" width="280" /> | <img src="./assets/ranking-toolcall.png" alt="툴콜순 1위" width="280" /> |
+| <img src="./assets/ranking-recommended.png" alt="추천순 1위" /> | <img src="./assets/ranking-toolcall.png" alt="툴콜순 1위" /> |
 
 
 ## License
