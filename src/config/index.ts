@@ -12,6 +12,6 @@ export const config = {
 // Validate required configuration
 if (!config.kopisApiKey) {
   console.error('[Config Error] KOPIS_API_KEY is required');
-  console.error('[Config Error] Please set KOPIS_API_KEY environment variable in Railway');
+  console.error('[Config Error] Please set KOPIS_API_KEY environment variable in Render');
   process.exit(1);
 }
