@@ -197,8 +197,10 @@ export class KopisService {
 
     markdown += `\n## 💰 관람료\n\n`;
     if (detail.pcseguidance) {
+      // 가격대 구분 쉼표("R석 60,000원, S석 40,000원")와 천단위 쉼표("25,000원")를
+      // 구분해야 함: 쉼표 뒤에 공백이 있고 숫자로 시작하지 않을 때만 가격대 구분으로 간주.
       const prices = detail.pcseguidance
-        .split(",")
+        .split(/,\s+(?!\d)/)
         .map((p: string) => p.trim());
       prices.forEach((price: string) => {
         markdown += `- ${price}\n`;
@@ -414,7 +416,11 @@ export class KopisService {
       const data = await cachedGet(url);
       const parsed = this.parser.parse(data);
 
-      return parsed.dbs?.db || null;
+      const detail = parsed.dbs?.db;
+      // KOPIS는 존재하지 않는 eventId에도 거의 빈 항목을 반환한다(예외 없이 200 OK).
+      // mt20id가 없으면 실제로는 "찾을 수 없음"으로 취급.
+      if (!detail || !detail.mt20id) return null;
+      return detail;
     } catch (error) {
       throw new Error(
         `Failed to fetch event detail: ${
