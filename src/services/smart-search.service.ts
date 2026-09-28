@@ -105,19 +105,14 @@ export class SmartSearchService {
         return { events, relaxed: [] };
       }
 
-      const relatedGenres = this.getRelatedGenres(args.genreCode);
-      const allEvents: any[] = [];
-      
-      for (const genre of relatedGenres.slice(0, 2)) { // 원래 + 1개
-        const modifiedArgs = { 
-          genreCode: genre,
-          limit: args.limit || 50 
-        };
-        const result = await this.fetchByTool(toolName, modifiedArgs);
-        allEvents.push(...result);
-      }
-      
-      const events = this.deduplicateEvents(allEvents);
+      const relatedGenres = this.getRelatedGenres(args.genreCode).slice(0, 2); // 원래 + 1개
+      const results = await Promise.all(
+        relatedGenres.map((genre) =>
+          this.fetchByTool(toolName, { genreCode: genre, limit: args.limit || 50 })
+        )
+      );
+
+      const events = this.deduplicateEvents(results.flat());
       // ✅ 유틸리티 함수 사용
       relaxed.push(`장르: ${getGenreName(args.genreCode)} + 유사 장르 1개`);
       return { events, relaxed };
@@ -125,19 +120,14 @@ export class SmartSearchService {
     } else {
       // 위치 검색: 날짜(1) > 위치(2) > 장르(3) > 개수(4)
       // → 장르 완화 (요청 장르 → +유사 장르 1개)
-      const relatedGenres = this.getRelatedGenres(args.genreCode);
-      const allEvents: any[] = [];
-      
-      for (const genre of relatedGenres.slice(0, 2)) {
-        const modifiedArgs = { 
-          ...args, 
-          genreCode: genre 
-        };
-        const events = await this.fetchByTool(toolName, modifiedArgs);
-        allEvents.push(...events);
-      }
-      
-      const events = this.deduplicateEvents(allEvents);
+      const relatedGenres = this.getRelatedGenres(args.genreCode).slice(0, 2);
+      const results = await Promise.all(
+        relatedGenres.map((genre) =>
+          this.fetchByTool(toolName, { ...args, genreCode: genre })
+        )
+      );
+
+      const events = this.deduplicateEvents(results.flat());
       // ✅ 유틸리티 함수 사용
       relaxed.push(`장르: ${getGenreName(args.genreCode)} + 유사 장르 1개`);
       return { events, relaxed };
@@ -168,19 +158,13 @@ export class SmartSearchService {
       }
 
       const relatedGenres = this.getRelatedGenres(args.genreCode);
-      const allEvents: any[] = [];
+      const results = await Promise.all(
+        relatedGenres.map((genre) =>
+          this.fetchByTool(toolName, { genreCode: genre, sidoCode, limit: args.limit || 20 })
+        )
+      );
 
-      for (const genre of relatedGenres) {
-        const modifiedArgs = {
-          genreCode: genre,
-          sidoCode: sidoCode,
-          limit: args.limit || 20,
-        };
-        const events = await this.fetchByTool(toolName, modifiedArgs);
-        allEvents.push(...events);
-      }
-
-      const events = this.deduplicateEvents(allEvents);
+      const events = this.deduplicateEvents(results.flat());
       relaxed.push(`위치: 구/군 → 시/도 전체`);
       // ✅ 유틸리티 함수 사용
       relaxed.push(`장르: ${getGenreName(args.genreCode)} + 유사 장르`);
@@ -188,7 +172,7 @@ export class SmartSearchService {
 
     } else if (toolName === 'get_trending_performances') {
       // 인기 검색: 장르(3) + 날짜(4) 완화
-      
+
       // genreCode가 없으면 장르 완화 불필요
       if (!args.genreCode) {
         const events = await this.fetchByTool(toolName, args);
@@ -197,18 +181,13 @@ export class SmartSearchService {
       }
 
       const relatedGenres = this.getRelatedGenres(args.genreCode);
-      const allEvents: any[] = [];
+      const results = await Promise.all(
+        relatedGenres.map((genre) =>
+          this.fetchByTool(toolName, { genreCode: genre, limit: args.limit || 20 })
+        )
+      );
 
-      for (const genre of relatedGenres) {
-        const modifiedArgs = { 
-          genreCode: genre,
-          limit: args.limit || 20 
-        };
-        const result = await this.fetchByTool(toolName, modifiedArgs);
-        allEvents.push(...result);
-      }
-
-      const events = this.deduplicateEvents(allEvents);
+      const events = this.deduplicateEvents(results.flat());
       // ✅ 유틸리티 함수 사용
       relaxed.push(`장르: ${getGenreName(args.genreCode)} + 유사 장르`);
       relaxed.push(`날짜: 최근 30일 범위로 확장`);
@@ -219,20 +198,13 @@ export class SmartSearchService {
       // ✅ 유틸리티 함수 사용
       const sidoCode = extractSidoCode(args.gugunCode || args.sidoCode);
       const relatedGenres = this.getRelatedGenres(args.genreCode);
-      const allEvents: any[] = [];
+      const results = await Promise.all(
+        relatedGenres.map((genre) =>
+          this.fetchByTool(toolName, { ...args, genreCode: genre, sidoCode, gugunCode: undefined })
+        )
+      );
 
-      for (const genre of relatedGenres) {
-        const modifiedArgs = {
-          ...args,
-          genreCode: genre,
-          sidoCode: sidoCode,
-          gugunCode: undefined, // 시/도만 사용
-        };
-        const events = await this.fetchByTool(toolName, modifiedArgs);
-        allEvents.push(...events);
-      }
-
-      const events = this.deduplicateEvents(allEvents);
+      const events = this.deduplicateEvents(results.flat());
       relaxed.push(`위치: 구/군 → 시/도 전체`);
       // ✅ 유틸리티 함수 사용
       relaxed.push(`장르: ${getGenreName(args.genreCode)} + 유사 장르`);
@@ -275,49 +247,46 @@ export class SmartSearchService {
     // ✅ 유틸리티 함수 사용: 시/도 코드 추출
     const sidoCode = extractSidoCode(args.gugunCode || args.sidoCode);
 
-    // 모든 장르 검색
+    // 모든 장르 검색 (병렬, 개별 장르 실패는 무시)
     const allGenres = Object.keys(GENRE_CODES);
-    const allEvents: any[] = [];
 
-    for (const genre of allGenres) {
-      try {
-        // 도구별 분기
-        if (toolName === 'filter_free_events') {
-          // filterFreeEvents는 자체적으로 오늘~30일 고정이므로
-          // startDate/endDate 무시됨
-          const result = await this.kopisService.filterFreeEvents({
-            genreCode: genre,
-            sidoCode: sidoCode,
-            limit: 10,
-          });
-          allEvents.push(...result.events);
-
-        } else if (toolName === 'get_trending_performances') {
-          // getTrendingPerformances는 자체적으로 최근 30일 검색
-          const result = await this.kopisService.getTrendingPerformances({
-            genreCode: genre,
-            limit: 10,
-          });
-          allEvents.push(...result.performances);
-
-        } else {
-          // search_events_by_location
-          const result = await this.kopisService.searchEventsByLocation({
-            genreCode: genre,
-            startDate,
-            endDate,
-            sidoCode: sidoCode,
-            limit: 10,
-          });
-          allEvents.push(...result.events);
+    const perGenre = await Promise.all(
+      allGenres.map(async (genre) => {
+        try {
+          if (toolName === 'filter_free_events') {
+            // filterFreeEvents는 자체적으로 오늘~30일 고정이므로 startDate/endDate 무시됨
+            const result = await this.kopisService.filterFreeEvents({
+              genreCode: genre,
+              sidoCode: sidoCode,
+              limit: 10,
+            });
+            return result.events;
+          } else if (toolName === 'get_trending_performances') {
+            // getTrendingPerformances는 자체적으로 최근 30일 검색
+            const result = await this.kopisService.getTrendingPerformances({
+              genreCode: genre,
+              limit: 10,
+            });
+            return result.performances;
+          } else {
+            // search_events_by_location
+            const result = await this.kopisService.searchEventsByLocation({
+              genreCode: genre,
+              startDate,
+              endDate,
+              sidoCode: sidoCode,
+              limit: 10,
+            });
+            return result.events;
+          }
+        } catch (error) {
+          console.error(`Failed to fetch genre ${genre}:`, error);
+          return [] as any[];
         }
-      } catch (error) {
-        // 개별 장르 검색 실패는 무시하고 계속 진행
-        console.error(`Failed to fetch genre ${genre}:`, error);
-      }
-    }
+      })
+    );
 
-    const events = this.deduplicateEvents(allEvents);
+    const events = this.deduplicateEvents(perGenre.flat());
 
     // ✅ 유틸리티 함수 사용
     relaxed.push(`위치: ${getSidoNameFull(sidoCode)} 전체`);
