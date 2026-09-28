@@ -1,7 +1,7 @@
-import axios from "axios";
 import { XMLParser } from "fast-xml-parser";
 import { GENRE_CODES, getGenreName, getAreaName } from "../constants/kopis-codes.js";
 import { isFreeEvent, extractMinPrice } from "../utils/event-helpers.js";
+import { cachedGet } from "../utils/http-client.js";
 
 interface SearchParams {
   genreCode: string;
@@ -410,8 +410,8 @@ export class KopisService {
   async getEventDetail(eventId: string) {
     try {
       const url = `${this.baseUrl}/pblprfr/${eventId}?service=${this.apiKey}`;
-      const response = await axios.get(url);
-      const parsed = this.parser.parse(response.data);
+      const data = await cachedGet(url);
+      const parsed = this.parser.parse(data);
 
       return parsed.dbs?.db || null;
     } catch (error) {
@@ -445,8 +445,8 @@ export class KopisService {
       }
 
       const url = `${this.baseUrl}/pblprfr?${queryParams.toString()}`;
-      const response = await axios.get(url);
-      const parsed = this.parser.parse(response.data);
+      const data = await cachedGet(url);
+      const parsed = this.parser.parse(data);
 
       let events = parsed.dbs?.db || [];
       if (!Array.isArray(events)) {
@@ -563,8 +563,8 @@ export class KopisService {
       }
 
       const url = `${this.baseUrl}/pblprfr?${queryParams.toString()}`;
-      const response = await axios.get(url);
-      const parsed = this.parser.parse(response.data);
+      const data = await cachedGet(url);
+      const parsed = this.parser.parse(data);
 
       let events = parsed.dbs?.db || [];
       if (!Array.isArray(events)) {
