@@ -129,6 +129,12 @@ GET  http://localhost:3000/health ← 상태 확인
 |---|---|
 | <img src="./assets/ranking-recommended.png" alt="추천순 1위" /> | <img src="./assets/ranking-toolcall.png" alt="툴콜순 1위" /> |
 
+카카오 MCP 공모전 'MCP Player 10'에서 Top 3에 선정되어 수상했습니다.
+
+<img src="./assets/award-ceremony.jpg" alt="카카오 MCP 공모전 수상" width="600" />
+
+관련 기사: [카카오 기술 블로그 — MCP Player 10](https://tech.kakao.com/posts/818)
+
 
 ## License
 
