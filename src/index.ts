@@ -12,6 +12,7 @@ import { SmartSearchService } from './services/smart-search.service.js';
 import { config } from './config/index.js';
 import { GENRE_EXAMPLES, SIDO_EXAMPLES, GUGUN_EXAMPLES } from './constants/kopis-codes.js';
 import { isFreeEvent } from './utils/event-helpers.js';
+import { logToolCall, getMetrics } from './utils/logger.js';
 
 const app = express();
 
@@ -31,6 +32,11 @@ app.get('/health', (_req: Request, res: Response) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
   });
+});
+
+// Metrics endpoint (in-memory, resets on restart)
+app.get('/metrics', (_req: Request, res: Response) => {
+  res.json({ uptime: process.uptime(), metrics: getMetrics() });
 });
 
 // MCP Server configuration
@@ -200,13 +206,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 // Call tool handler
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const startedAt = Date.now();
+  let resultCount = 0;
+  let relaxLevel: number | undefined;
+  let errorMsg: string | undefined;
 
   try {
     const apiKey = config.kopisApiKey;
     if (!apiKey) {
       throw new Error('KOPIS API key is required. Please set KOPIS_API_KEY environment variable.');
     }
-    
+
     const kopisService = new KopisService(apiKey);
     const smartSearch = new SmartSearchService(kopisService);
 
@@ -215,6 +225,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case 'get_genre_list': {
         result = kopisService.getGenreList();
+        resultCount = result.length;
         const markdown = kopisService.formatGenreListMarkdown(result);
         return {
           content: [
@@ -230,14 +241,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!args) {
           throw new Error('Arguments are required for search_events_by_location');
         }
-        
+
         // 🎯 스마트 검색 사용
         result = await smartSearch.search(name, args);
+        resultCount = result.events.length;
+        relaxLevel = result.level;
         const markdown = kopisService.formatEventsMarkdown({
           events: result.events,
           message: result.message,
         });
-        
+
         return {
           content: [
             {
@@ -252,13 +265,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!args) {
           throw new Error('Arguments are required for filter_free_events');
         }
-        
+
         // 💰 가격 우선 스마트 검색
         result = await smartSearch.search(name, args);
-        
+        resultCount = result.events.length;
+        relaxLevel = result.level;
+
         // 무료/유료 분리
         const freeEvents = result.events.filter((e: any) => isFreeEvent(e));
-        
+
         const markdown = kopisService.formatFreeEventsMarkdown({
           events: result.events,
           freeCount: freeEvents.length,
@@ -266,7 +281,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           message: result.message,
           dateRange: '오늘 ~ 30일 후',
         });
-        
+
         return {
           content: [
             {
@@ -282,6 +297,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           throw new Error('eventId is required for get_event_detail');
         }
         result = await kopisService.getEventDetail(args.eventId as string);
+        resultCount = result ? 1 : 0;
         const markdown = kopisService.formatEventDetailMarkdown(result);
         return {
           content: [
@@ -296,6 +312,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_trending_performances': {
         // 인기도 우선 스마트 검색
         result = await smartSearch.search(name, args || {});
+        resultCount = result.events.length;
+        relaxLevel = result.level;
         const markdown = kopisService.formatTrendingMarkdown({
           performances: result.events,
           count: result.events.length,
@@ -316,8 +334,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const maskedMessage = errorMessage.replace(
+    const raw = error instanceof Error ? error.message : String(error);
+    errorMsg = raw;
+    const maskedMessage = raw.replace(
       /[a-f0-9]{32,}/gi,
       (match) => `${match.substring(0, 4)}****${match.substring(match.length - 4)}`
     );
@@ -331,6 +350,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
       isError: true,
     };
+  } finally {
+    logToolCall({ tool: name, latencyMs: Date.now() - startedAt, resultCount, relaxLevel, error: errorMsg });
   }
 });
 
