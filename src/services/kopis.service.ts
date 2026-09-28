@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import { GENRE_CODES, getGenreName, getAreaName } from "../constants/kopis-codes.js";
 import { isFreeEvent, extractMinPrice } from "../utils/event-helpers.js";
 import { cachedGet } from "../utils/http-client.js";
+import { KopisEvent } from "../types/kopis.types.js";
 
 interface SearchParams {
   genreCode: string;
@@ -26,7 +27,7 @@ interface TrendingParams {
 }
 
 interface TrendingResult {
-  performances: any[];
+  performances: KopisEvent[];
   count: number;
   message: string;
   scoreInfo: string;
@@ -407,7 +408,7 @@ export class KopisService {
     };
   }
 
-  async getEventDetail(eventId: string) {
+  async getEventDetail(eventId: string): Promise<KopisEvent | null> {
     try {
       const url = `${this.baseUrl}/pblprfr/${eventId}?service=${this.apiKey}`;
       const data = await cachedGet(url);
@@ -547,7 +548,7 @@ export class KopisService {
     }
   }
 
-  private async fetchEvents(params: any) {
+  private async fetchEvents(params: any): Promise<KopisEvent[]> {
     try {
       const queryParams = new URLSearchParams({
         service: this.apiKey,
