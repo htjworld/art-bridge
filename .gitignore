@@ -23,6 +23,9 @@ yarn-error.log*
 # Claude Code
 .claude/
 
+# Local working notes / session logs (not committed)
+.project-notes/
+
 # IDE
 .vscode/
 .idea/
