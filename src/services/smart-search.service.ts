@@ -21,39 +21,50 @@ export class SmartSearchService {
    */
   async search(toolName: string, args: any): Promise<SmartSearchResult> {
     const analysis = this.queryAnalyzer.analyze(toolName, args);
+
+    // 완화를 언제 멈출지 판단하는 "최소 결과 수"
     const minCount = analysis.parsedParams.minCount || 3;
+    // 실제로 사용자에게 돌려줄 "출력 개수" (툴별 기본값, limit 반영)
+    const outputLimit = this.resolveOutputLimit(toolName, args);
 
     // Level 1: 요청 그대로
     const level1 = await this.executeLevel1(toolName, args);
     if (level1.events.length >= minCount) {
-      return this.formatResult(level1.events, 1, [], analysis, minCount);
+      return this.formatResult(level1.events, 1, [], analysis, outputLimit);
     }
 
     // Level 2: 우선순위 낮은 조건 1개 완화
     const level2 = await this.executeLevel2(toolName, args, analysis);
     if (level2.events.length >= minCount) {
-      return this.formatResult(level2.events, 2, level2.relaxed, analysis, minCount);
+      return this.formatResult(level2.events, 2, level2.relaxed, analysis, outputLimit);
     }
 
     // Level 3: 우선순위 낮은 조건 2개 완화
     const level3 = await this.executeLevel3(toolName, args, analysis);
     if (level3.events.length >= minCount) {
-      return this.formatResult(level3.events, 3, level3.relaxed, analysis, minCount);
+      return this.formatResult(level3.events, 3, level3.relaxed, analysis, outputLimit);
     }
 
     // Level 4: 최대 완화 (고정: 시/도 전체 + 모든 장르 + 한달)
     const level4 = await this.executeLevel4(toolName, args);
     if (level4.events.length >= minCount) {
-      return this.formatResult(level4.events, 4, level4.relaxed, analysis, minCount);
+      return this.formatResult(level4.events, 4, level4.relaxed, analysis, outputLimit);
     }
 
-    // 실패
-    return {
-      events: level4.events,
-      level: 0,
-      relaxedConditions: level4.relaxed,
-      message: this.generateFailureMessage(minCount, level4.events.length),
+    // 실패해도 있는 만큼은 반환
+    return this.formatResult(level4.events, 0, level4.relaxed, analysis, outputLimit);
+  }
+
+  /** 툴별 기본 출력 개수. 사용자가 limit을 주면 그 값(1~50)으로 clamp. */
+  private resolveOutputLimit(toolName: string, args: any): number {
+    const defaults: Record<string, number> = {
+      filter_free_events: 20,
+      get_trending_performances: 20,
+      search_events_by_location: 10,
     };
+    const fallback = defaults[toolName] ?? 10;
+    const raw = args?.limit ?? fallback;
+    return Math.min(Math.max(raw, 1), 50);
   }
 
   /**
@@ -357,7 +368,7 @@ export class SmartSearchService {
     level: number,
     relaxed: string[],
     analysis: any,
-    minCount: number
+    outputLimit: number
   ): SmartSearchResult {
     // 점수 계산 및 정렬
     const scored = this.scoreCalculator.scoreAndSort(
@@ -374,15 +385,19 @@ export class SmartSearchService {
       }
     );
 
-    // 상위 N개만 선택
-    const topEvents = scored.slice(0, minCount).map(s => s.event);
+    // 상위 N개만 선택 (출력 개수 기준)
+    const topEvents = scored.slice(0, outputLimit).map(s => s.event);
+
+    const message = level === 0
+      ? this.generateFailureMessage(analysis.parsedParams.minCount || 3, topEvents.length)
+      : this.generateMessage(level, relaxed, topEvents.length, outputLimit);
 
     return {
       events: topEvents,
       level,
       relaxedConditions: relaxed,
-      message: this.generateMessage(level, relaxed, topEvents.length, minCount),
-      scores: scored.slice(0, minCount),
+      message,
+      scores: scored.slice(0, outputLimit),
     };
   }
 

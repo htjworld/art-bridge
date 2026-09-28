@@ -11,6 +11,7 @@ import { KopisService } from './services/kopis.service.js';
 import { SmartSearchService } from './services/smart-search.service.js';
 import { config } from './config/index.js';
 import { GENRE_EXAMPLES, SIDO_EXAMPLES, GUGUN_EXAMPLES } from './constants/kopis-codes.js';
+import { isFreeEvent } from './utils/event-helpers.js';
 
 const app = express();
 
@@ -256,11 +257,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await smartSearch.search(name, args);
         
         // 무료/유료 분리
-        const freeEvents = result.events.filter((e: any) =>
-          e.pcseguidance?.toLowerCase().includes('무료') ||
-          e.pcseguidance === '0' ||
-          e.pcseguidance === '0원'
-        );
+        const freeEvents = result.events.filter((e: any) => isFreeEvent(e));
         
         const markdown = kopisService.formatFreeEventsMarkdown({
           events: result.events,

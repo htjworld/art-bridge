@@ -1,5 +1,6 @@
 import { PriorityWeights, EventScore } from '../types/search.types.js';
 import { getGenreName, getAreaName, getSidoNameShort } from '../constants/kopis-codes.js';
+import { isFreeEvent, extractMinPrice } from './event-helpers.js';
 
 /**
  * 우선순위 기반 공연 점수 계산기
@@ -65,21 +66,13 @@ export class ScoreCalculator {
    * 가격 점수 (0-100)
    */
   private calculatePriceScore(event: any, _targetIsFree?: boolean): number {
-    const priceStr = event.pcseguidance || '';
-    
-    // 무료 감지
-    const isFree = 
-      priceStr.toLowerCase().includes('무료') ||
-      priceStr === '0' ||
-      priceStr === '0원';
-
-    if (isFree) {
+    if (isFreeEvent(event)) {
       return 100; // 무료면 만점
     }
 
     // 최저가 추출
-    const minPrice = this.extractMinPrice(priceStr);
-    
+    const minPrice = extractMinPrice(event.pcseguidance);
+
     if (minPrice === Infinity) return 0;
     if (minPrice === 0) return 100;
     
@@ -193,16 +186,6 @@ export class ScoreCalculator {
     }
 
     return 0;
-  }
-
-  /**
-   * 최저가 추출
-   */
-  private extractMinPrice(priceStr: string): number {
-    if (!priceStr) return Infinity;
-    const matches = priceStr.match(/\d+/g);
-    if (!matches) return Infinity;
-    return Math.min(...matches.map(Number));
   }
 
   /**

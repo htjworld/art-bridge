@@ -1,6 +1,7 @@
 import axios from "axios";
 import { XMLParser } from "fast-xml-parser";
 import { GENRE_CODES, getGenreName, getAreaName } from "../constants/kopis-codes.js";
+import { isFreeEvent, extractMinPrice } from "../utils/event-helpers.js";
 
 interface SearchParams {
   genreCode: string;
@@ -133,10 +134,7 @@ export class KopisService {
 
     for (let index = 0; index < events.length; index++) {
       const event = events[index];
-      const isFree =
-        event.pcseguidance?.toLowerCase().includes("무료") ||
-        event.pcseguidance === "0" ||
-        event.pcseguidance === "0원";
+      const isFree = isFreeEvent(event);
 
       markdown += `## ${index + 1}. ${isFree ? "🎁 [무료]" : "💰"} ${
         event.prfnm || "제목 없음"
@@ -379,20 +377,11 @@ export class KopisService {
       limit: 100,
     });
 
-    const freeEvents = events.filter(
-      (e: any) =>
-        e.pcseguidance?.toLowerCase().includes("무료") ||
-        e.pcseguidance === "0" ||
-        e.pcseguidance === "0원"
-    );
+    const freeEvents = events.filter((e: any) => isFreeEvent(e));
 
     const paidEvents = events
       .filter((e: any) => !freeEvents.includes(e))
-      .sort((a: any, b: any) => {
-        const priceA = this.extractMinPrice(a.pcseguidance);
-        const priceB = this.extractMinPrice(b.pcseguidance);
-        return priceA - priceB;
-      });
+      .sort((a: any, b: any) => extractMinPrice(a.pcseguidance) - extractMinPrice(b.pcseguidance));
 
     let result = [];
     let message = "";
@@ -597,13 +586,6 @@ export class KopisService {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}${month}${day}`;
-  }
-
-  private extractMinPrice(priceStr: string): number {
-    if (!priceStr) return Infinity;
-    const matches = priceStr.match(/\d+/g);
-    if (!matches) return Infinity;
-    return Math.min(...matches.map(Number));
   }
 
   private cleanHtml(html: string): string {
